@@ -1,0 +1,40 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "umar-s-fyp",
+          "appId": "1:215420339393:android:326baf89f52b0508064040",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "umar-s-fyp",
+          "configurations": {
+            "android": "1:215420339393:android:326baf89f52b0508064040",
+            "ios": "1:215420339393:ios:0c5694e7b7d0041f064040",
+            "macos": "1:215420339393:ios:0c5694e7b7d0041f064040",
+            "web": "1:215420339393:web:158206dd8b2fdd14064040",
+            "windows": "1:215420339393:web:62956a8f9012b9a1064040"
+          }
+        }
+      }
+    }
+  }
+}

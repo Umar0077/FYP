@@ -1,0 +1,261 @@
+import 'dart:math';
+import 'dart:io';
+import 'package:google_generative_ai/google_generative_ai.dart';
+
+class GeminiService {
+  static const String _apiKey = 'AIzaSyBzeQj9eY4s13lT2mWf1oCoz9axq5y67tI';
+  
+  final _model = GenerativeModel(
+    model: 'gemini-2.5-flash-lite',
+    apiKey: _apiKey,
+  );
+
+  /// Generate interview questions AND their correct answers in ONE API call
+  /// Returns a Map with 'questions' and 'answers' lists
+  Future<Map<String, List<String>>> generateQuestionsWithAnswers({String difficulty = 'Easy', int? count}) async {
+    final random = Random();
+    
+    // Determine question count
+    int finalCount;
+    if (difficulty.toLowerCase() == 'hard') {
+      finalCount = 3 + random.nextInt(3); // Random between 3-5
+    } else {
+      finalCount = count ?? 3; // Default to 3 questions
+    }
+
+    // Create simplified prompt for Gemini to generate questions based on difficulty
+    String difficultyInstruction;
+    if (difficulty.toLowerCase() == 'easy') {
+      difficultyInstruction = 'Ask really easy questions related to computer science and software engineering. Focus on basic concepts, fundamentals, and simple terminology.';
+    } else if (difficulty.toLowerCase() == 'medium') {
+      difficultyInstruction = 'Ask medium-level questions related to computer science and software engineering. Focus on problem-solving, algorithms, data structures, and practical applications.';
+    } else {
+      difficultyInstruction = 'Ask hard questions related to computer science and software engineering. Focus on advanced topics, system design, complex algorithms, and in-depth technical concepts.';
+    }
+
+    final prompt = '''
+You are an expert technical interviewer. Generate exactly $finalCount unique interview questions with their correct answers.
+
+Difficulty Level: $difficulty
+$difficultyInstruction
+
+Important:
+- Generate EXACTLY $finalCount questions
+- For each question, provide a clear, concise correct answer
+- Format: Question|Answer (separated by pipe character |)
+- Cover diverse topics in computer science and software engineering
+- No numbering, no extra text
+
+Format your response as:
+Question 1 text|Correct answer 1 text
+Question 2 text|Correct answer 2 text
+...and so on, one per line.
+''';
+
+    try {
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final text = response.text?.trim() ?? '';
+      
+      if (text.isEmpty) {
+        throw Exception('Empty response from AI');
+      }
+
+      // Parse the response - split by newlines
+      final lines = text
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty && line.contains('|'))
+          .toList();
+
+      if (lines.isEmpty) {
+        throw Exception('No valid questions generated');
+      }
+
+      List<String> questions = [];
+      List<String> answers = [];
+
+      for (final line in lines.take(finalCount)) {
+        final parts = line.split('|');
+        if (parts.length >= 2) {
+          // Remove any numbering from question
+          String question = parts[0].trim().replaceAll(RegExp(r'^\d+\.?\s*'), '');
+          String answer = parts[1].trim();
+          questions.add(question);
+          answers.add(answer);
+        }
+      }
+
+      if (questions.isEmpty) {
+        throw Exception('Failed to parse questions and answers');
+      }
+
+      return {
+        'questions': questions,
+        'answers': answers,
+      };
+    } catch (e) {
+      print('Error generating questions with answers: $e');
+      rethrow;
+    }
+  }
+
+  /// Generate interview questions using AI based on difficulty level.
+  ///
+  /// - difficulty: 'Easy' | 'Medium' | 'Hard'
+  /// - count: number of questions desired. For Hard difficulty, AI will generate between 5-15 questions.
+  Future<List<String>> generateQuestions({String difficulty = 'Easy', int? count}) async {
+    final random = Random();
+    
+    // Determine question count
+    int finalCount;
+    if (difficulty.toLowerCase() == 'hard') {
+      finalCount = 3 + random.nextInt(3); // Random between 3-5 (reduced from 5-15)
+    } else {
+      finalCount = count ?? 3; // Default to 3 questions
+    }
+
+    // Create simplified prompt for Gemini to generate questions based on difficulty
+    String difficultyInstruction;
+    if (difficulty.toLowerCase() == 'easy') {
+      difficultyInstruction = 'Ask really easy questions related to computer science and software engineering. Focus on basic concepts, fundamentals, and simple terminology.';
+    } else if (difficulty.toLowerCase() == 'medium') {
+      difficultyInstruction = 'Ask medium-level questions related to computer science and software engineering. Focus on problem-solving, algorithms, data structures, and practical applications.';
+    } else {
+      difficultyInstruction = 'Ask hard questions related to computer science and software engineering. Focus on advanced topics, system design, complex algorithms, and in-depth technical concepts.';
+    }
+
+    final prompt = '''
+You are an expert technical interviewer. Generate exactly $finalCount unique interview questions for software engineering candidates.
+
+Difficulty Level: $difficulty
+$difficultyInstruction
+
+Important:
+- Generate EXACTLY $finalCount questions
+- Each question should be clear and concise
+- Cover diverse topics in computer science and software engineering
+- Return ONLY the questions, one per line
+- No numbering, no extra text, just the questions
+
+Format your response as a simple list of questions, one per line.
+''';
+
+    try {
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final text = response.text?.trim() ?? '';
+      
+      if (text.isEmpty) {
+        throw Exception('Empty response from AI');
+      }
+
+      // Parse the response - split by newlines and filter out empty lines
+      final questions = text
+          .split('\n')
+          .map((q) => q.trim())
+          .where((q) => q.isNotEmpty && !q.startsWith('#') && !q.startsWith('*'))
+          .map((q) => q.replaceAll(RegExp(r'^\d+\.?\s*'), '')) // Remove numbering
+          .where((q) => q.length > 10) // Filter out very short lines
+          .toList();
+
+      if (questions.isEmpty) {
+        throw Exception('No valid questions generated');
+      }
+
+      return questions.take(finalCount).toList();
+    } catch (e) {
+      print('Error generating questions: $e');
+      rethrow;
+    }
+  }
+
+  /// Ask Gemini to evaluate if the given answer is correct.
+  /// Uses AI to judge answer quality without a predefined correct answer.
+  Future<String> checkAnswer({
+    required String question,
+    required String answer,
+  }) async {
+    final prompt = '''
+You are an expert technical interviewer evaluating a candidate's answer.
+
+Question: "$question"
+Candidate's Answer: "$answer"
+
+Evaluate the answer with a lenient approach:
+- If the answer shows ANY relevant understanding or is partially correct, mark it as "Correct"
+- If the answer demonstrates knowledge of the topic even if incomplete, mark it as "Correct"
+- If the answer is somewhat related to the question, mark it as "Correct"
+- ONLY mark as "Incorrect" if the answer is completely wrong, irrelevant, or shows no understanding
+
+Reply with ONLY ONE WORD:
+- "Correct" if the answer shows any relevant understanding or partial correctness
+- "Incorrect" ONLY if the answer is completely wrong or totally irrelevant
+
+Your response:
+''';
+
+    try {
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final text = response.text?.trim().toLowerCase() ?? '';
+      if (text.startsWith('correct')) return 'Correct';
+      if (text.startsWith('incorrect')) return 'Incorrect';
+      return 'Correct'; // Default to Correct if unclear
+    } catch (e) {
+      print('Error checking answer: $e');
+      return 'Correct'; // Default to Correct on error to be lenient
+    }
+  }
+
+  /// Generate correct answer for a given question
+  Future<String> generateCorrectAnswer(String question) async {
+    final prompt = '''
+You are an expert technical interviewer. Provide a correct, concise answer to the following interview question.
+
+Question: "$question"
+
+Provide a clear, accurate answer that demonstrates good understanding of the topic.
+Keep it concise but complete (2-4 sentences).
+
+Your answer:
+''';
+
+    try {
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final text = response.text?.trim() ?? '';
+      
+      if (text.isEmpty) {
+        return 'Answer not available';
+      }
+
+      return text;
+    } catch (e) {
+      print('Error generating correct answer: $e');
+      return 'Answer not available';
+    }
+  }
+
+  /// Transcribe audio to text using Gemini
+  Future<String> transcribeAudio(String audioPath) async {
+    try {
+      final audioFile = File(audioPath);
+      if (!await audioFile.exists()) {
+        return '';
+      }
+
+      final audioBytes = await audioFile.readAsBytes();
+      
+      final prompt = 'Transcribe the following audio to text. Return only the transcribed text without any additional commentary or explanation.';
+
+      final response = await _model.generateContent([
+        Content.multi([
+          TextPart(prompt),
+          DataPart('audio/wav', audioBytes),
+        ])
+      ]);
+
+      return response.text?.trim() ?? '';
+    } catch (e) {
+      print('Transcription error: $e');
+      return '';
+    }
+  }
+}

@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // Interviews collection (new structure for NLP evaluation)
+    match /interviews/{interviewId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Attempts subcollection
+      match /attempts/{attemptId} {
+        allow read, create, update: if isSignedIn() && (
+          get(/databases/$(database)/documents/interviews/$(interviewId)).data.userId == request.auth.uid
+          || isAdmin()
+        );
+      }
+    }
+    
+    // Questions cache collection (for embeddings)
+    match /questions/{questionId} {
+      allow read: if true;
+      allow write: if false; // Only Cloud Functions can write
+    }
+
+    // Final interview result documents
+    match /interview_result/{resultId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || request.resource.data.userId == request.auth.uid
+        || isAdmin()
+      );
+    }
+
+    match /resources/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /job_suggestions/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /support_tickets/{docId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /admin_notifications/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /admin_activity_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
