@@ -20,7 +20,7 @@ class SettingsController extends GetxController {
   final RxBool enableFallback = AppConstants.defaultEnableFallback.obs;
   
   // Emotion API settings
-  final RxString emotionApiBaseUrl = 'http://192.168.18.131:8000'.obs;
+  final RxString emotionApiBaseUrl = 'http://192.168.43.252:8000'.obs;
   
   final RxBool isSaving = false.obs;
   final RxString saveMessage = ''.obs;

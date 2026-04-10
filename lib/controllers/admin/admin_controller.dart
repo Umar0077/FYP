@@ -24,6 +24,7 @@ class AdminController extends GetxController {
   final supportTickets = <AdminSupportTicket>[].obs;
   final notifications = <AdminNotificationItem>[].obs;
   final activityLogs = <AdminLogItem>[].obs;
+  final userPerformanceLeaderboard = <AdminUserPerformance>[].obs;
 
   final isLoading = false.obs;
   final isSaving = false.obs;
@@ -65,6 +66,9 @@ class AdminController extends GetxController {
         _dataService.fetchNotifications().catchError((_) => <AdminNotificationItem>[]),
         _dataService.fetchAdminLogs().catchError((_) => <AdminLogItem>[]),
         _dataService.fetchAdminSettings().catchError((_) => AdminSettings.defaults()),
+        _dataService
+            .fetchUserPerformanceLeaderboard()
+            .catchError((_) => <AdminUserPerformance>[]),
       ]);
 
       users.assignAll(results[0] as List<MockUser>);
@@ -76,6 +80,7 @@ class AdminController extends GetxController {
       notifications.assignAll(results[6] as List<AdminNotificationItem>);
       activityLogs.assignAll(results[7] as List<AdminLogItem>);
       adminSettings.value = results[8] as AdminSettings;
+      userPerformanceLeaderboard.assignAll(results[9] as List<AdminUserPerformance>);
     } catch (e, st) {
       log('Admin dashboard load failed: $e', name: 'AdminController', stackTrace: st);
       final text = e.toString().toLowerCase();

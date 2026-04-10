@@ -125,6 +125,41 @@ class AdminDashboardScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 24),
+              _buildSectionTitle('Top Performers'),
+              const SizedBox(height: 12),
+              GlassCard(
+                child: Builder(
+                  builder: (_) {
+                    final leaders = controller.userPerformanceLeaderboard.take(5).toList();
+                    if (leaders.isEmpty) {
+                      return const Text('No leaderboard data available yet.');
+                    }
+
+                    return Column(
+                      children: leaders.asMap().entries.map((entry) {
+                        final rank = entry.key + 1;
+                        final user = entry.value;
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            child: Text('$rank', style: const TextStyle(fontSize: 12)),
+                          ),
+                          title: Text(user.name),
+                          subtitle: Text(
+                            '${user.successRate.toStringAsFixed(1)}% success • ${user.totalInterviews} interviews',
+                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                          onTap: () => Get.toNamed('/admin/users/detail', arguments: user.userId),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 24),
               _buildSectionTitle('Recent Users'),
               const SizedBox(height: 12),
               GlassCard(
@@ -172,6 +207,12 @@ class AdminDashboardScreen extends StatelessWidget {
                 route: '/admin/users',
               ),
               _ActionTile(
+                title: 'User Leaderboard',
+                subtitle: 'Rank users by success rate',
+                icon: Icons.emoji_events,
+                route: '/admin/users/leaderboard',
+              ),
+              _ActionTile(
                 title: 'Interview Sessions',
                 subtitle: 'Review all recorded interviews and stats',
                 icon: Icons.assessment,
@@ -196,8 +237,8 @@ class AdminDashboardScreen extends StatelessWidget {
                 route: '/admin/jobs',
               ),
               _ActionTile(
-                title: 'Support Tickets',
-                subtitle: 'View and reply to user support requests',
+                title: 'Support Chats',
+                subtitle: 'Open and reply to user conversations',
                 icon: Icons.support_agent,
                 route: '/admin/support',
               ),

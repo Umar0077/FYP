@@ -17,7 +17,7 @@ class EmotionTrackingConfig {
   /// 
   /// For production:
   /// - Use full domain: 'https://your-domain.com' (HTTPS recommended)
-  static const String baseUrl = 'http://192.168.18.75:8000';
+  static const String baseUrl = 'http://192.168.43.252:8000';
   
   /// Optional API key (set if backend requires x-api-key header)
   /// Leave null if backend API_KEY env var is not set

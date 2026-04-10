@@ -14,6 +14,8 @@ class InterviewService {
   static Future<String?> createInterviewSession({
     required String difficulty,
     required int questionCount,
+    String? position,
+    String? interviewType,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -23,6 +25,8 @@ class InterviewService {
         'userId': user.uid,
         'difficulty': difficulty,
         'questionCount': questionCount,
+        'position': position,
+        'interviewType': interviewType,
         'startedAt': FieldValue.serverTimestamp(),
         'status': 'in_progress',
         'answeredCount': 0,
@@ -55,6 +59,8 @@ class InterviewService {
     required String correctAnswer,
     required String userAnswer,
     required String status, // "answered" or "skipped"
+    String? position,
+    String? interviewType,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -66,6 +72,8 @@ class InterviewService {
         'correctAnswer': correctAnswer,
         'userAnswer': userAnswer,
         'status': status,
+        'position': position,
+        'interviewType': interviewType,
         'userId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
       };

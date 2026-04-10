@@ -4,7 +4,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 
 /// Service for analyzing confidence level using Gemini based on emotion data
 class GeminiConfidenceAnalyzer {
-  static const String _apiKey = 'AIzaSyBzeQj9eY4s13lT2mWf1oCoz9axq5y67tI';
+  static const String _apiKey = 'AIzaSyCNVnh58aP_b1fUvxOp6q5R8tf_w30YpUI';
   
   // List of models to try (fallback chain) - updated with valid models
   static const List<String> _modelNames = [

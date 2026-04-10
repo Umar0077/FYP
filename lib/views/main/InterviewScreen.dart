@@ -18,7 +18,15 @@ import '../../config/emotion_tracking_config.dart';
 class InterviewScreen extends StatefulWidget {
 	final String difficulty;
 	final int? count;
-	const InterviewScreen({super.key, this.difficulty = 'Easy', this.count});
+	final String? position;
+	final String? interviewType;
+	const InterviewScreen({
+		super.key,
+		this.difficulty = 'Easy',
+		this.count,
+		this.position,
+		this.interviewType,
+	});
 
 	@override
 	State<InterviewScreen> createState() => _InterviewScreenState();
@@ -206,6 +214,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			final result = await _gemini.generateQuestionsWithAnswers(
 				difficulty: widget.difficulty,
 				count: widget.count,
+				position: widget.position,
+				interviewType: widget.interviewType,
 			);
 
 			final qs = result['questions'] ?? [];
@@ -220,6 +230,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				_interviewId = await InterviewService.createInterviewSession(
 					difficulty: widget.difficulty,
 					questionCount: qs.length,
+					position: widget.position,
+					interviewType: widget.interviewType,
 				);
 
 				if (mounted) {
@@ -230,10 +242,20 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				}
 			}
 		} catch (e) {
+      Get.log('Error loading questions: $e', isError: true);
+			final err = e.toString().toLowerCase();
+			final isKeyIssue = err.contains('api key') ||
+				err.contains('unauthenticated') ||
+				err.contains('permission denied') ||
+				err.contains('developer_error');
 			if (mounted) {
 				setState(() {
 					_loading = false;
-					_questions = ['Error loading questions. Please restart the interview.'];
+					_questions = [
+						isKeyIssue
+							? 'Gemini API key was rejected. Open Settings and save a valid key, then restart the interview.'
+							: 'Error loading questions. Please restart the interview.',
+					];
 				});
 			}
 		}
@@ -300,6 +322,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				correctAnswer: _correctAnswers[_questionIndex],
 				userAnswer: userAnswer.isEmpty ? '' : userAnswer,
 				status: status,
+				position: widget.position,
+				interviewType: widget.interviewType,
 			);
 		}
 

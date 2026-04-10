@@ -87,6 +87,40 @@ class MockUser {
   }
 }
 
+class AdminUserPerformance {
+  final String userId;
+  final String name;
+  final String email;
+  final String role;
+  final int currentStreak;
+  final int totalInterviews;
+  final int totalAnswered;
+  final int totalWrong;
+  final int totalSkipped;
+  final double successRate;
+  final double averageAccuracy;
+  final DateTime lastInterviewAt;
+
+  const AdminUserPerformance({
+    required this.userId,
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.currentStreak,
+    required this.totalInterviews,
+    required this.totalAnswered,
+    required this.totalWrong,
+    required this.totalSkipped,
+    required this.successRate,
+    required this.averageAccuracy,
+    required this.lastInterviewAt,
+  });
+
+  int get totalCorrect {
+    return (totalAnswered - totalWrong).clamp(0, totalAnswered);
+  }
+}
+
 class MockEmotionSummaryUsed {
   final double average_confidence;
   final String dominant_emotion;

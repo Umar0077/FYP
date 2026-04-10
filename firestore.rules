@@ -10,6 +10,11 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isSupportChatOwner(chatId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid;
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
@@ -63,6 +68,46 @@ service cloud.firestore {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // New one-to-one support chat system
+    match /support_chats/{chatId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() && (
+        isAdmin() || (
+          request.resource.data.userId == request.auth.uid
+          && request.resource.data.chatId == chatId
+        )
+      );
+
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.userId == request.auth.uid
+      );
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (isSupportChatOwner(chatId) || isAdmin());
+
+        allow create: if isSignedIn() && (
+          (
+            isAdmin()
+            && request.resource.data.senderId == request.auth.uid
+            && request.resource.data.senderRole == 'admin'
+          ) || (
+            isSupportChatOwner(chatId)
+            && request.resource.data.senderId == request.auth.uid
+            && request.resource.data.senderRole == 'user'
+          )
+        );
+
+        allow update: if isSignedIn() && (
+          isAdmin() ||
+          (
+            isSupportChatOwner(chatId)
+            && request.resource.data.diff(resource.data).changedKeys().hasOnly(['isRead', 'readAt'])
+          )
+        );
+      }
     }
 
     match /admin_notifications/{docId} {

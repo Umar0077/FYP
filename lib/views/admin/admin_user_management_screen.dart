@@ -20,6 +20,11 @@ class AdminUserManagementScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('User Practice Stats'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.emoji_events),
+            tooltip: 'Leaderboard',
+            onPressed: () => Get.toNamed('/admin/users/leaderboard'),
+          ),
           IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
         ],
       ),

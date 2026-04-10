@@ -19,7 +19,7 @@ class EmotionSessionController extends GetxController {
   final isSessionActive = RxBool(false);
   final errorMessage = RxString('');
   final lastEmotionReport = Rx<Map<String, dynamic>?>(null);
-  final baseUrl = RxString('http://192.168.18.131:8000');
+  final baseUrl = RxString('http://192.168.43.252:8000');
   
   // Stats
   final framesUploaded = RxInt(0);
@@ -27,7 +27,7 @@ class EmotionSessionController extends GetxController {
   
   // Configuration keys
   static const String baseUrlKey = 'emotion_api_base_url';
-  static const String defaultBaseUrl = 'http://192.168.18.131:8000';
+  static const String defaultBaseUrl = 'http://192.168.43.252:8000';
   
   @override
   void onInit() {

@@ -212,8 +212,8 @@ class SettingsScreen extends StatelessWidget {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Base URL',
-                          hintText: 'http://192.168.18.131:8000',
-                          helperText: 'FastAPI backend URL (e.g., http://192.168.1.100:8000)',
+                          hintText: 'http://192.168.43.252:8000',
+                          helperText: 'FastAPI backend URL (e.g., http://192.168.43.252:8000)',
                           prefixIcon: Icon(Icons.link),
                         ),
                         onChanged: (value) =>

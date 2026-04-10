@@ -1,19 +1,91 @@
 import 'dart:math';
 import 'dart:io';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import '../core/constants/app_constants.dart';
+import '../core/utils/secure_storage.dart';
 
 class GeminiService {
-  static const String _apiKey = 'AIzaSyBzeQj9eY4s13lT2mWf1oCoz9axq5y67tI';
-  
-  final _model = GenerativeModel(
-    model: 'gemini-2.5-flash-lite',
-    apiKey: _apiKey,
-  );
+  static const String _apiKey = 'AIzaSyCNVnh58aP_b1fUvxOp6q5R8tf_w30YpUI';
+  final SecureStorage _secureStorage = SecureStorage();
+
+  String _buildInterviewTypeInstruction(String interviewType, String position) {
+    final type = interviewType.toLowerCase();
+
+    if (type.contains('technical')) {
+      return 'Ask role-specific technical questions for a $position, including core concepts, architecture, debugging, and practical implementation trade-offs.';
+    }
+    if (type.contains('behavioral')) {
+      return 'Ask behavioral and situational questions tailored to a $position, focusing on teamwork, conflict resolution, ownership, and communication.';
+    }
+    if (type.contains('coding')) {
+      return 'Ask coding-focused questions for a $position, including algorithms, problem solving, code quality, complexity analysis, and edge cases.';
+    }
+    if (type.contains('phone')) {
+      return 'Ask concise screening questions for a $position, focusing on fundamentals, role fit, and practical experience verification.';
+    }
+    if (type.contains('hr')) {
+      return 'Ask HR-style questions for a $position, focusing on motivation, career goals, strengths/weaknesses, and culture fit.';
+    }
+
+    return 'Ask questions that match both the selected interview type and the responsibilities of a $position.';
+  }
+
+  GenerativeModel _buildModel(String apiKey) {
+    return GenerativeModel(
+      model: 'gemini-2.5-flash-lite',
+      apiKey: apiKey,
+    );
+  }
+
+  Future<String?> _readSavedApiKey() async {
+    final saved = await _secureStorage.read(AppConstants.geminiApiKeyKey);
+    final trimmed = saved?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  bool _isApiKeyError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('api key') ||
+        message.contains('unauthenticated') ||
+        message.contains('permission denied') ||
+        message.contains('developer_error');
+  }
+
+  Future<GenerateContentResponse> _generateContentWithKeyFallback(List<Content> content) async {
+    final savedKey = await _readSavedApiKey();
+    final primaryKey = savedKey ?? _apiKey;
+
+    try {
+      final model = _buildModel(primaryKey);
+      return await model.generateContent(content);
+    } catch (e) {
+      // If a stale key was saved in Settings, retry once with bundled key.
+      if (savedKey != null && savedKey != _apiKey && _isApiKeyError(e)) {
+        final fallbackModel = _buildModel(_apiKey);
+        return await fallbackModel.generateContent(content);
+      }
+      rethrow;
+    }
+  }
 
   /// Generate interview questions AND their correct answers in ONE API call
   /// Returns a Map with 'questions' and 'answers' lists
-  Future<Map<String, List<String>>> generateQuestionsWithAnswers({String difficulty = 'Easy', int? count}) async {
+  Future<Map<String, List<String>>> generateQuestionsWithAnswers({
+    String difficulty = 'Easy',
+    int? count,
+    String? position,
+    String? interviewType,
+  }) async {
     final random = Random();
+    final targetPosition = (position?.trim().isNotEmpty ?? false)
+        ? position!.trim()
+        : 'Software Engineer';
+    final targetInterviewType = (interviewType?.trim().isNotEmpty ?? false)
+        ? interviewType!.trim()
+        : 'Technical Interview';
     
     // Determine question count
     int finalCount;
@@ -33,17 +105,26 @@ class GeminiService {
       difficultyInstruction = 'Ask hard questions related to computer science and software engineering. Focus on advanced topics, system design, complex algorithms, and in-depth technical concepts.';
     }
 
+    final interviewTypeInstruction = _buildInterviewTypeInstruction(
+      targetInterviewType,
+      targetPosition,
+    );
+
     final prompt = '''
 You are an expert technical interviewer. Generate exactly $finalCount unique interview questions with their correct answers.
 
+Target Position: $targetPosition
+Interview Type: $targetInterviewType
 Difficulty Level: $difficulty
 $difficultyInstruction
+$interviewTypeInstruction
 
 Important:
 - Generate EXACTLY $finalCount questions
 - For each question, provide a clear, concise correct answer
 - Format: Question|Answer (separated by pipe character |)
-- Cover diverse topics in computer science and software engineering
+- Every question must match BOTH the selected position and interview type
+- Cover diverse but role-relevant topics for the selected position
 - No numbering, no extra text
 
 Format your response as:
@@ -53,7 +134,7 @@ Question 2 text|Correct answer 2 text
 ''';
 
     try {
-      final response = await _model.generateContent([Content.text(prompt)]);
+      final response = await _generateContentWithKeyFallback([Content.text(prompt)]);
       final text = response.text?.trim() ?? '';
       
       if (text.isEmpty) {
@@ -103,8 +184,19 @@ Question 2 text|Correct answer 2 text
   ///
   /// - difficulty: 'Easy' | 'Medium' | 'Hard'
   /// - count: number of questions desired. For Hard difficulty, AI will generate between 5-15 questions.
-  Future<List<String>> generateQuestions({String difficulty = 'Easy', int? count}) async {
+  Future<List<String>> generateQuestions({
+    String difficulty = 'Easy',
+    int? count,
+    String? position,
+    String? interviewType,
+  }) async {
     final random = Random();
+    final targetPosition = (position?.trim().isNotEmpty ?? false)
+        ? position!.trim()
+        : 'Software Engineer';
+    final targetInterviewType = (interviewType?.trim().isNotEmpty ?? false)
+        ? interviewType!.trim()
+        : 'Technical Interview';
     
     // Determine question count
     int finalCount;
@@ -124,16 +216,25 @@ Question 2 text|Correct answer 2 text
       difficultyInstruction = 'Ask hard questions related to computer science and software engineering. Focus on advanced topics, system design, complex algorithms, and in-depth technical concepts.';
     }
 
+    final interviewTypeInstruction = _buildInterviewTypeInstruction(
+      targetInterviewType,
+      targetPosition,
+    );
+
     final prompt = '''
 You are an expert technical interviewer. Generate exactly $finalCount unique interview questions for software engineering candidates.
 
+Target Position: $targetPosition
+Interview Type: $targetInterviewType
 Difficulty Level: $difficulty
 $difficultyInstruction
+$interviewTypeInstruction
 
 Important:
 - Generate EXACTLY $finalCount questions
 - Each question should be clear and concise
-- Cover diverse topics in computer science and software engineering
+- Every question must match BOTH the selected position and interview type
+- Cover diverse but role-relevant topics for the selected position
 - Return ONLY the questions, one per line
 - No numbering, no extra text, just the questions
 
@@ -141,7 +242,7 @@ Format your response as a simple list of questions, one per line.
 ''';
 
     try {
-      final response = await _model.generateContent([Content.text(prompt)]);
+      final response = await _generateContentWithKeyFallback([Content.text(prompt)]);
       final text = response.text?.trim() ?? '';
       
       if (text.isEmpty) {
@@ -194,7 +295,7 @@ Your response:
 ''';
 
     try {
-      final response = await _model.generateContent([Content.text(prompt)]);
+      final response = await _generateContentWithKeyFallback([Content.text(prompt)]);
       final text = response.text?.trim().toLowerCase() ?? '';
       if (text.startsWith('correct')) return 'Correct';
       if (text.startsWith('incorrect')) return 'Incorrect';
@@ -219,7 +320,7 @@ Your answer:
 ''';
 
     try {
-      final response = await _model.generateContent([Content.text(prompt)]);
+      final response = await _generateContentWithKeyFallback([Content.text(prompt)]);
       final text = response.text?.trim() ?? '';
       
       if (text.isEmpty) {
@@ -245,7 +346,7 @@ Your answer:
       
       final prompt = 'Transcribe the following audio to text. Return only the transcribed text without any additional commentary or explanation.';
 
-      final response = await _model.generateContent([
+      final response = await _generateContentWithKeyFallback([
         Content.multi([
           TextPart(prompt),
           DataPart('audio/wav', audioBytes),

@@ -24,23 +24,15 @@ class _InterviewPrepScreenState extends State<InterviewPrepScreen> {
 		'Full Stack Developer',
 		'Mobile Developer',
 		'DevOps Engineer',
-		'Data Engineer',
-		'Data Scientist',
 		'Machine Learning Engineer',
-		'QA Engineer',
 		'UI/UX Designer',
-		'Product Manager',
-		'System Architect',
 	];
 
 	final List<String> _interviewTypes = [
 		'Technical Interview',
 		'Behavioral Interview',
-		'System Design Interview',
 		'Coding Interview',
 		'Phone Screening',
-		'Panel Interview',
-		'Case Interview',
 		'HR Interview',
 	];
 
@@ -262,6 +254,8 @@ class _InterviewPrepScreenState extends State<InterviewPrepScreen> {
 													builder: (_) => InterviewScreen(
 														difficulty: _difficulty!,
 															count: _selectedCount,
+															position: _selectedPosition,
+															interviewType: _selectedInterviewType,
 														),
 													));
 												},

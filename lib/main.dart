@@ -24,6 +24,7 @@ import 'bindings/app_bindings.dart';
 import 'views/admin/admin_login_screen.dart';
 import 'views/admin/admin_dashboard_screen.dart';
 import 'views/admin/admin_user_management_screen.dart';
+import 'views/admin/admin_user_leaderboard_screen.dart';
 import 'views/admin/admin_user_detail_screen.dart';
 import 'views/admin/admin_interview_management_screen.dart';
 import 'views/admin/admin_interview_detail_screen.dart';
@@ -32,6 +33,7 @@ import 'views/admin/admin_emotion_tracking_screen.dart';
 import 'views/admin/admin_resources_management_screen.dart';
 import 'views/admin/admin_job_suggestions_management_screen.dart';
 import 'views/admin/admin_support_screen.dart';
+import 'views/admin/admin_support_chat_detail_screen.dart';
 import 'views/admin/admin_analytics_screen.dart';
 import 'views/admin/admin_notifications_screen.dart';
 import 'views/admin/admin_activity_logs_screen.dart';
@@ -162,6 +164,12 @@ class _MyAppState extends State<MyApp> {
               middlewares: [AdminRouteGuard()],
             ),
             GetPage(
+              name: '/admin/users/leaderboard',
+              page: () => const AdminUserLeaderboardScreen(),
+              binding: AdminBinding(),
+              middlewares: [AdminRouteGuard()],
+            ),
+            GetPage(
               name: '/admin/users/detail',
               page: () => const AdminUserDetailScreen(),
               binding: AdminBinding(),
@@ -206,6 +214,12 @@ class _MyAppState extends State<MyApp> {
             GetPage(
               name: '/admin/support',
               page: () => const AdminSupportScreen(),
+              binding: AdminBinding(),
+              middlewares: [AdminRouteGuard()],
+            ),
+            GetPage(
+              name: '/admin/support/chat',
+              page: () => const AdminSupportChatDetailScreen(),
               binding: AdminBinding(),
               middlewares: [AdminRouteGuard()],
             ),

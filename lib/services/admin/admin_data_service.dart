@@ -28,6 +28,129 @@ class AdminDataService {
     }
   }
 
+  Future<List<AdminUserPerformance>> fetchUserPerformanceLeaderboard() async {
+    final usersSnapshot = await _firestore.collection('users').get();
+    final interviewsSnapshot = await _firestore.collection('interviews').get();
+
+    int toInt(dynamic value, {int fallback = 0}) {
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? fallback;
+      return fallback;
+    }
+
+    double toDouble(dynamic value, {double fallback = 0.0}) {
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? fallback;
+      return fallback;
+    }
+
+    DateTime toDateTime(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is DateTime) return value;
+      if (value is String) {
+        return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    final Map<String, Map<String, dynamic>> statsByUser = <String, Map<String, dynamic>>{};
+
+    for (final interviewDoc in interviewsSnapshot.docs) {
+      final data = interviewDoc.data();
+      final userId = data['userId']?.toString() ?? '';
+      if (userId.isEmpty) continue;
+
+      final status = data['status']?.toString().toLowerCase() ?? '';
+      if (status.isNotEmpty && status != 'completed') {
+        continue;
+      }
+
+      final answered = toInt(data['answeredCount']);
+      final wrong = toInt(data['wrongCount']);
+      final skipped = toInt(data['skippedCount']);
+      final avgAccuracy = toDouble(data['avgAccuracy']);
+      final endedAt = toDateTime(data['endedAt']);
+
+      final userStats = statsByUser.putIfAbsent(
+        userId,
+        () => <String, dynamic>{
+          'totalInterviews': 0,
+          'totalAnswered': 0,
+          'totalWrong': 0,
+          'totalSkipped': 0,
+          'accuracySum': 0.0,
+          'lastInterviewAt': DateTime.fromMillisecondsSinceEpoch(0),
+        },
+      );
+
+      userStats['totalInterviews'] = (userStats['totalInterviews'] as int) + 1;
+      userStats['totalAnswered'] = (userStats['totalAnswered'] as int) + answered;
+      userStats['totalWrong'] = (userStats['totalWrong'] as int) + wrong;
+      userStats['totalSkipped'] = (userStats['totalSkipped'] as int) + skipped;
+      userStats['accuracySum'] = (userStats['accuracySum'] as double) + avgAccuracy;
+
+      final lastInterviewAt = userStats['lastInterviewAt'] as DateTime;
+      if (endedAt.isAfter(lastInterviewAt)) {
+        userStats['lastInterviewAt'] = endedAt;
+      }
+    }
+
+    final leaderboard = usersSnapshot.docs.map((doc) {
+      final data = doc.data();
+      final userId = doc.id;
+      final stats = statsByUser[userId] ??
+          <String, dynamic>{
+            'totalInterviews': 0,
+            'totalAnswered': 0,
+            'totalWrong': 0,
+            'totalSkipped': 0,
+            'accuracySum': 0.0,
+            'lastInterviewAt': DateTime.fromMillisecondsSinceEpoch(0),
+          };
+
+      final totalInterviews = stats['totalInterviews'] as int;
+      final totalAnswered = stats['totalAnswered'] as int;
+      final totalWrong = stats['totalWrong'] as int;
+      final totalSkipped = stats['totalSkipped'] as int;
+      final accuracySum = stats['accuracySum'] as double;
+      final lastInterviewAt = stats['lastInterviewAt'] as DateTime;
+
+      final correctAnswers = (totalAnswered - totalWrong).clamp(0, totalAnswered);
+      final successRate = totalAnswered > 0 ? (correctAnswers / totalAnswered) * 100 : 0.0;
+      final averageAccuracy = totalInterviews > 0 ? accuracySum / totalInterviews : 0.0;
+
+      return AdminUserPerformance(
+        userId: userId,
+        name: data['name']?.toString() ?? 'Unknown User',
+        email: data['email']?.toString() ?? '',
+        role: data['role']?.toString() ?? 'user',
+        currentStreak: toInt(data['currentStreak']),
+        totalInterviews: totalInterviews,
+        totalAnswered: totalAnswered,
+        totalWrong: totalWrong,
+        totalSkipped: totalSkipped,
+        successRate: successRate,
+        averageAccuracy: averageAccuracy,
+        lastInterviewAt: lastInterviewAt,
+      );
+    }).toList();
+
+    leaderboard.sort((a, b) {
+      final bySuccessRate = b.successRate.compareTo(a.successRate);
+      if (bySuccessRate != 0) return bySuccessRate;
+
+      final byInterviewCount = b.totalInterviews.compareTo(a.totalInterviews);
+      if (byInterviewCount != 0) return byInterviewCount;
+
+      final byAccuracy = b.averageAccuracy.compareTo(a.averageAccuracy);
+      if (byAccuracy != 0) return byAccuracy;
+
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return leaderboard;
+  }
+
   Future<List<MockInterview>> fetchInterviews() async {
     final snapshot = await _firestore.collection('interviews').get();
     return snapshot.docs.map((d) => MockInterview.fromMap(d.id, d.data())).toList();
