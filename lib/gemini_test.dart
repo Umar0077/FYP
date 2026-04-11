@@ -1,7 +1,7 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 Future<void> testGemini() async {
-  const apiKey = 'AIzaSyCNVnh58aP_b1fUvxOp6q5R8tf_w30YpUI';
+  const apiKey = 'AIzaSyAZT4J3ByOFJggpa-9GwvADivxQpvE5lv8';
   
   // Create a Gemini model instance
   final model = GenerativeModel(

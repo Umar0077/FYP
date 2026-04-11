@@ -14,9 +14,11 @@ class InterviewResultScreen extends StatefulWidget {
 
 class _InterviewResultScreenState extends State<InterviewResultScreen> {
 	bool _loading = true;
+	bool _waitingForBackendAggregate = false;
 	double _avgRelevance = 0.0;
 	double _avgAccuracy = 0.0;
-	int _answeredCount = 0;
+	int _skippedCount = 0;
+	int _correctCount = 0;
 	int _totalCount = 0;
 	int _wrongCount = 0;
 	Map<String, dynamic>? _confidenceAnalysis;
@@ -27,14 +29,19 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 		_loadResults();
 	}
 
-	Future<void> _loadResults() async {
+	Future<void> _loadResults({int retryAttempt = 0}) async {
 		if (widget.interviewId == null) {
-			setState(() => _loading = false);
+			setState(() {
+				_loading = false;
+				_waitingForBackendAggregate = false;
+			});
 			return;
 		}
 
 		try {
 			final uid = FirebaseAuth.instance.currentUser?.uid;
+			Map<String, dynamic> mergedData = <String, dynamic>{};
+
 			final resultDoc = await FirebaseFirestore.instance
 					.collection('interview_result')
 					.doc(widget.interviewId)
@@ -48,16 +55,18 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 						name: 'InterviewResultScreen',
 						level: 1000,
 					);
-					setState(() => _loading = false);
+					setState(() {
+						_loading = false;
+						_waitingForBackendAggregate = false;
+					});
 					return;
 				}
 
 				developer.log('Loaded interview_result document: ${resultDoc.id}', name: 'InterviewResultScreen');
-				_applyDataToState(data);
-				return;
+				mergedData.addAll(data);
 			}
 
-			// Backward compatibility: fallback to legacy interviews document.
+			// Always check interviews document to read backend aggregate fields.
 			final legacyDoc = await FirebaseFirestore.instance
 					.collection('interviews')
 					.doc(widget.interviewId)
@@ -66,28 +75,105 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 			if (legacyDoc.exists) {
 				final data = legacyDoc.data()!;
 				developer.log('Loaded legacy interviews document: ${legacyDoc.id}', name: 'InterviewResultScreen');
-				_applyDataToState(data);
-			} else {
+				mergedData = {
+					...data,
+					...mergedData,
+					'relevanceOverall': mergedData['relevanceOverall'] ?? data['relevanceOverall'],
+					'accuracyOverall': mergedData['accuracyOverall'] ?? data['accuracyOverall'],
+					'avgRelevance': mergedData['avgRelevance'] ?? data['avgRelevance'],
+					'avgAccuracy': mergedData['avgAccuracy'] ?? data['avgAccuracy'],
+					'answeredCount': mergedData['answeredCount'] ?? data['answeredCount'],
+					'skippedCount': mergedData['skippedCount'] ?? data['skippedCount'],
+					'wrongCount': mergedData['wrongCount'] ?? data['wrongCount'],
+					'correctCount': mergedData['correctCount'] ?? data['correctCount'],
+					'totalCount': mergedData['totalCount'] ?? data['totalCount'],
+					'evaluatedAnsweredCount':
+							mergedData['evaluatedAnsweredCount'] ?? data['evaluatedAnsweredCount'],
+				};
+			}
+
+			if (mergedData.isEmpty) {
 				developer.log('Interview result document not found: ${widget.interviewId}', name: 'InterviewResultScreen', level: 900);
-				setState(() => _loading = false);
+				setState(() {
+					_loading = false;
+					_waitingForBackendAggregate = false;
+				});
+				return;
+			}
+
+			if (!_hasUsableAggregateFields(mergedData)) {
+				if (retryAttempt < 5) {
+					developer.log(
+						'Backend aggregate fields not ready yet. Retrying load (${retryAttempt + 1}/5)',
+						name: 'InterviewResultScreen',
+						level: 900,
+					);
+					await Future<void>.delayed(const Duration(seconds: 2));
+					if (!mounted) return;
+					return _loadResults(retryAttempt: retryAttempt + 1);
+				}
+
+				setState(() {
+					_loading = false;
+					_waitingForBackendAggregate = true;
+					final answered = _asInt(mergedData['answeredQuestions'] ?? mergedData['answeredCount']);
+					final wrong = _asInt(mergedData['wrongAnswers'] ?? mergedData['wrongCount']);
+					final total = _asInt(mergedData['totalQuestions'] ?? mergedData['totalCount']);
+					final skipped = _asInt(mergedData['skippedCount']);
+					_wrongCount = wrong;
+					_skippedCount = skipped > 0 ? skipped : (total - answered).clamp(0, total);
+					_totalCount = total > 0 ? total : (answered + _skippedCount);
+					_correctCount = _asInt(mergedData['correctCount']);
+					if (_correctCount <= 0) {
+						_correctCount = (answered - wrong).clamp(0, answered);
+					}
+				});
+				return;
+			} else {
+				developer.log('Final Firestore aggregate loaded for interviewId=${widget.interviewId}', name: 'InterviewResultScreen');
+				_applyDataToState(mergedData);
 			}
 		} catch (e) {
 			developer.log('Error loading results: $e', name: 'InterviewResultScreen', error: e, level: 1000);
-			setState(() => _loading = false);
+			setState(() {
+				_loading = false;
+				_waitingForBackendAggregate = false;
+			});
 		}
 	}
 
 	void _applyDataToState(Map<String, dynamic> data) {
 		final confidenceMap = _normalizeConfidenceMap(data);
+		final int answered = _asInt(data['answeredQuestions'] ?? data['answeredCount']);
+		final int wrong = _asInt(data['wrongAnswers'] ?? data['wrongCount']);
+		final int total = _asInt(data['totalQuestions'] ?? data['totalCount']);
+		final int skippedFromDoc = _asInt(data['skippedCount']);
+		final int skipped = skippedFromDoc > 0 ? skippedFromDoc : (total - answered).clamp(0, total);
+		final int correctFromDoc = _asInt(data['correctCount']);
+		final int correct = correctFromDoc > 0 ? correctFromDoc : (answered - wrong).clamp(0, answered);
+
 		setState(() {
-			_avgRelevance = _asDouble(data['avgRelevance']);
-			_avgAccuracy = _asDouble(data['avgAccuracy']);
-			_answeredCount = _asInt(data['answeredQuestions'] ?? data['answeredCount']);
-			_totalCount = _asInt(data['totalQuestions'] ?? data['totalCount']);
-			_wrongCount = _asInt(data['wrongAnswers'] ?? data['wrongCount']);
+			_avgRelevance = _asDouble(data['relevanceOverall'] ?? data['avgRelevance']);
+			_avgAccuracy = _asDouble(data['accuracyOverall'] ?? data['avgAccuracy']);
+			_skippedCount = skipped;
+			_correctCount = correct;
+			_totalCount = total > 0 ? total : (answered + skipped);
+			_wrongCount = wrong;
 			_confidenceAnalysis = confidenceMap;
 			_loading = false;
+			_waitingForBackendAggregate = false;
 		});
+	}
+
+	bool _hasUsableAggregateFields(Map<String, dynamic> data) {
+		final relevanceOverall = data['relevanceOverall'];
+		final accuracyOverall = data['accuracyOverall'];
+		final avgRelevance = data['avgRelevance'];
+		final avgAccuracy = data['avgAccuracy'];
+
+		final hasOverall = relevanceOverall is num && accuracyOverall is num;
+		final hasAvgFallback = avgRelevance is num && avgAccuracy is num;
+		return hasOverall || hasAvgFallback;
 	}
 
 	Map<String, dynamic>? _normalizeConfidenceMap(Map<String, dynamic> data) {
@@ -143,10 +229,49 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 			);
 		}
 
-		final int rawCorrect = _answeredCount - _wrongCount;
-		final int correctCount = rawCorrect < 0 ? 0 : rawCorrect;
-		final int rawSkipped = _totalCount - _answeredCount;
-		final int skippedCount = rawSkipped < 0 ? 0 : rawSkipped;
+		if (_waitingForBackendAggregate) {
+			return Scaffold(
+				backgroundColor: backgroundColor,
+				appBar: AppBar(
+					backgroundColor: backgroundColor,
+					elevation: 0,
+					leading: IconButton(
+						icon: Icon(Icons.arrow_back, color: textColor),
+						onPressed: () => Navigator.of(context).pop(),
+					),
+					centerTitle: true,
+					title: Text('Result', style: TextStyle(color: textColor, fontWeight: FontWeight.w700)),
+				),
+				body: Center(
+					child: Padding(
+						padding: const EdgeInsets.symmetric(horizontal: 24),
+						child: Column(
+							mainAxisSize: MainAxisSize.min,
+							children: [
+								const CircularProgressIndicator(),
+								const SizedBox(height: 14),
+								Text(
+									'Final interview scoring is still processing on the server. Please try again in a moment.',
+									textAlign: TextAlign.center,
+									style: TextStyle(color: secondaryTextColor),
+								),
+								const SizedBox(height: 14),
+								ElevatedButton(
+									onPressed: () {
+										setState(() => _loading = true);
+										_loadResults();
+									},
+									child: const Text('Retry'),
+								),
+							],
+						),
+					),
+				),
+			);
+		}
+
+		final int correctCount = _correctCount < 0 ? 0 : _correctCount;
+		final int skippedCount = _skippedCount < 0 ? 0 : _skippedCount;
 
 		return Scaffold(
 			backgroundColor: backgroundColor,

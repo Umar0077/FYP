@@ -41,48 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyClWBobE4fdGgCg-3fXYJJjWwHNBKokFo0',
-    appId: '1:215420339393:web:158206dd8b2fdd14064040',
-    messagingSenderId: '215420339393',
-    projectId: 'umar-s-fyp',
-    authDomain: 'umar-s-fyp.firebaseapp.com',
-    storageBucket: 'umar-s-fyp.firebasestorage.app',
-    measurementId: 'G-12L0G5RQSK',
+    apiKey: 'AIzaSyASE-WSYQGbTo0XqnUg-BEO6s5HFd7BkYU',
+    appId: '1:140641716848:web:401ffb32633505ae3c42b5',
+    messagingSenderId: '140641716848',
+    projectId: 'moiz-fyp',
+    authDomain: 'moiz-fyp.firebaseapp.com',
+    storageBucket: 'moiz-fyp.firebasestorage.app',
+    measurementId: 'G-CSSTHKD25P',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyC08h_FvsDCNcM2TyFUn3taWINH4TzCqTI',
-    appId: '1:215420339393:android:326baf89f52b0508064040',
-    messagingSenderId: '215420339393',
-    projectId: 'umar-s-fyp',
-    storageBucket: 'umar-s-fyp.firebasestorage.app',
+    apiKey: 'AIzaSyAJfmKZxqSce9NyhPNQxvmnYVfJ0fDjZgY',
+    appId: '1:140641716848:android:48ab7582b53118b63c42b5',
+    messagingSenderId: '140641716848',
+    projectId: 'moiz-fyp',
+    storageBucket: 'moiz-fyp.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBvZyjbZgPkqIyYvj_g6lJd4hiGYRm0bH8',
-    appId: '1:215420339393:ios:0c5694e7b7d0041f064040',
-    messagingSenderId: '215420339393',
-    projectId: 'umar-s-fyp',
-    storageBucket: 'umar-s-fyp.firebasestorage.app',
+    apiKey: 'AIzaSyBvckex2O1Aeh73hdBjohlagnjvtUFDGlw',
+    appId: '1:140641716848:ios:74f139080ac361733c42b5',
+    messagingSenderId: '140641716848',
+    projectId: 'moiz-fyp',
+    storageBucket: 'moiz-fyp.firebasestorage.app',
     iosBundleId: 'com.example.novaPrep',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBvZyjbZgPkqIyYvj_g6lJd4hiGYRm0bH8',
-    appId: '1:215420339393:ios:0c5694e7b7d0041f064040',
-    messagingSenderId: '215420339393',
-    projectId: 'umar-s-fyp',
-    storageBucket: 'umar-s-fyp.firebasestorage.app',
+    apiKey: 'AIzaSyBvckex2O1Aeh73hdBjohlagnjvtUFDGlw',
+    appId: '1:140641716848:ios:74f139080ac361733c42b5',
+    messagingSenderId: '140641716848',
+    projectId: 'moiz-fyp',
+    storageBucket: 'moiz-fyp.firebasestorage.app',
     iosBundleId: 'com.example.novaPrep',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyClWBobE4fdGgCg-3fXYJJjWwHNBKokFo0',
-    appId: '1:215420339393:web:62956a8f9012b9a1064040',
-    messagingSenderId: '215420339393',
-    projectId: 'umar-s-fyp',
-    authDomain: 'umar-s-fyp.firebaseapp.com',
-    storageBucket: 'umar-s-fyp.firebasestorage.app',
-    measurementId: 'G-HKENTPRC3L',
+    apiKey: 'AIzaSyASE-WSYQGbTo0XqnUg-BEO6s5HFd7BkYU',
+    appId: '1:140641716848:web:8924dd458e1387df3c42b5',
+    messagingSenderId: '140641716848',
+    projectId: 'moiz-fyp',
+    authDomain: 'moiz-fyp.firebaseapp.com',
+    storageBucket: 'moiz-fyp.firebasestorage.app',
+    measurementId: 'G-DCC77SJYXQ',
   );
+
 }

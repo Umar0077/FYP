@@ -1,13 +1,25 @@
 {
   "functions": [
     {
-      "source": "functions",
       "codebase": "default",
       "ignore": [
         "node_modules",
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log"
+      ],
+      "source": "functions"
+    },
+    {
+      "source": "nlp",
+      "codebase": "nlp",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
       ]
     }
   ],
@@ -18,20 +30,20 @@
     "platforms": {
       "android": {
         "default": {
-          "projectId": "umar-s-fyp",
-          "appId": "1:215420339393:android:326baf89f52b0508064040",
+          "projectId": "moiz-fyp",
+          "appId": "1:140641716848:android:48ab7582b53118b63c42b5",
           "fileOutput": "android/app/google-services.json"
         }
       },
       "dart": {
         "lib/firebase_options.dart": {
-          "projectId": "umar-s-fyp",
+          "projectId": "moiz-fyp",
           "configurations": {
-            "android": "1:215420339393:android:326baf89f52b0508064040",
-            "ios": "1:215420339393:ios:0c5694e7b7d0041f064040",
-            "macos": "1:215420339393:ios:0c5694e7b7d0041f064040",
-            "web": "1:215420339393:web:158206dd8b2fdd14064040",
-            "windows": "1:215420339393:web:62956a8f9012b9a1064040"
+            "android": "1:140641716848:android:48ab7582b53118b63c42b5",
+            "ios": "1:140641716848:ios:74f139080ac361733c42b5",
+            "macos": "1:140641716848:ios:74f139080ac361733c42b5",
+            "web": "1:140641716848:web:401ffb32633505ae3c42b5",
+            "windows": "1:140641716848:web:8924dd458e1387df3c42b5"
           }
         }
       }

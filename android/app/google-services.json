@@ -1,51 +1,45 @@
 {
   "project_info": {
-    "project_number": "215420339393",
-    "project_id": "umar-s-fyp",
-    "storage_bucket": "umar-s-fyp.firebasestorage.app"
+    "project_number": "140641716848",
+    "project_id": "moiz-fyp",
+    "storage_bucket": "moiz-fyp.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:215420339393:android:326baf89f52b0508064040",
+        "mobilesdk_app_id": "1:140641716848:android:48ab7582b53118b63c42b5",
         "android_client_info": {
           "package_name": "com.example.nova_prep"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "215420339393-bchglb1pk85u1jm8v7542p52oii7cq38.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.nova_prep",
-            "certificate_hash": "582cae5e00d47bb9cb57b07785ef61cc9cd09d0f"
-          }
-        },
-        {
-          "client_id": "215420339393-0ukvtrsr6fk1l2chpa19u6f4k91p11l0.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyC08h_FvsDCNcM2TyFUn3taWINH4TzCqTI"
+          "current_key": "AIzaSyAJfmKZxqSce9NyhPNQxvmnYVfJ0fDjZgY"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "215420339393-0ukvtrsr6fk1l2chpa19u6f4k91p11l0.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "215420339393-8155e7gtr7aaqe2rtvmu9s3hbss7j8cu.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.example.novaPrep"
-              }
-            }
-          ]
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:140641716848:android:1d6dacbcb52327803c42b5",
+        "android_client_info": {
+          "package_name": "com.example.project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJfmKZxqSce9NyhPNQxvmnYVfJ0fDjZgY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
         }
       }
     }

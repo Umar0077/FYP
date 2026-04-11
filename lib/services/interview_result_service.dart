@@ -14,6 +14,7 @@ class InterviewResultService {
     required int answeredCount,
     required int skippedCount,
     required int wrongCount,
+    int? correctCount,
     required int totalCount,
     required int questionCount,
     required Map<String, dynamic> confidenceAnalysis,
@@ -21,6 +22,11 @@ class InterviewResultService {
     String? difficulty,
     dynamic startedAt,
     String status = 'completed',
+    double? relevanceOverall,
+    double? accuracyOverall,
+    int? evaluatedAnsweredCount,
+    String? resultVersion,
+    String? resultSource,
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -70,12 +76,24 @@ class InterviewResultService {
     final double confidenceLevel = _normalizedConfidenceLevel(confidenceAnalysis);
     final String confidenceLabel = _confidenceLabel(confidenceAnalysis, confidenceLevel);
     final String confidenceSummary = _confidenceSummary(confidenceAnalysis);
+    final double effectiveRelevanceOverall = relevanceOverall ?? avgRelevance;
+    final double effectiveAccuracyOverall = accuracyOverall ?? avgAccuracy;
+    final int effectiveEvaluatedAnsweredCount = evaluatedAnsweredCount ?? answeredCount;
+    final int effectiveCorrectCount = correctCount ?? (answeredCount - wrongCount).clamp(0, answeredCount);
+    final String effectiveResultVersion = resultVersion?.trim().isNotEmpty == true
+        ? resultVersion!.trim()
+        : 'v2';
+    final String effectiveResultSource = resultSource?.trim().isNotEmpty == true
+        ? resultSource!.trim()
+      : 'attempt_aggregated_in_app';
 
     final existingDoc = await docRef.get();
     final payload = <String, dynamic>{
       'userId': user.uid,
       'interviewId': interviewId,
       'sessionId': interviewId,
+      'relevanceOverall': effectiveRelevanceOverall,
+      'accuracyOverall': effectiveAccuracyOverall,
       'avgRelevance': avgRelevance,
       'avgAccuracy': avgAccuracy,
       'confidenceLevel': confidenceLevel,
@@ -86,9 +104,13 @@ class InterviewResultService {
       'skippedCount': skippedCount,
       'wrongCount': wrongCount,
       'wrongAnswers': wrongCount,
+      'correctCount': effectiveCorrectCount,
       'totalCount': effectiveTotalCount,
       'totalQuestions': effectiveTotalCount,
       'questionCount': effectiveQuestionCount > 0 ? effectiveQuestionCount : effectiveTotalCount,
+      'evaluatedAnsweredCount': effectiveEvaluatedAnsweredCount,
+      'resultVersion': effectiveResultVersion,
+      'resultSource': effectiveResultSource,
       'difficulty': effectiveDifficulty,
       'status': status,
       'endedAt': FieldValue.serverTimestamp(),
@@ -103,8 +125,11 @@ class InterviewResultService {
     developer.log('Preparing to save final interview result', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('userId=${user.uid}', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('interviewId=$interviewId', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('relevanceOverall=$effectiveRelevanceOverall', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('accuracyOverall=$effectiveAccuracyOverall', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('avgRelevance=$avgRelevance', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('avgAccuracy=$avgAccuracy', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('correctCount=$effectiveCorrectCount', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('confidenceLevel=$confidenceLevel', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('documentPath=${docRef.path}', name: 'InterviewResultService.saveInterviewResultToFirestore');
 
@@ -112,6 +137,8 @@ class InterviewResultService {
       await docRef.set(payload, SetOptions(merge: true));
 
       await legacyInterviewRef.set({
+        'relevanceOverall': effectiveRelevanceOverall,
+        'accuracyOverall': effectiveAccuracyOverall,
         'avgRelevance': avgRelevance,
         'avgAccuracy': avgAccuracy,
         'confidenceAnalysis': confidenceAnalysis,
@@ -119,6 +146,10 @@ class InterviewResultService {
         'answeredCount': answeredCount,
         'skippedCount': skippedCount,
         'wrongCount': wrongCount,
+        'correctCount': effectiveCorrectCount,
+        'evaluatedAnsweredCount': effectiveEvaluatedAnsweredCount,
+        'resultVersion': effectiveResultVersion,
+        'resultSource': effectiveResultSource,
         'status': status,
         'endedAt': FieldValue.serverTimestamp(),
         'computedAt': FieldValue.serverTimestamp(),
@@ -158,6 +189,7 @@ class InterviewResultService {
       answeredCount: answeredQuestions,
       skippedCount: (totalQuestions - answeredQuestions).clamp(0, totalQuestions),
       wrongCount: wrongAnswers,
+      correctCount: (answeredQuestions - wrongAnswers).clamp(0, answeredQuestions),
       totalCount: totalQuestions,
       questionCount: totalQuestions,
       confidenceAnalysis: confidenceAnalysis,

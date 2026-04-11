@@ -51,7 +51,6 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 	bool _isListening = false;
 	bool _speechAvailable = false;
 	int _answeredCount = 0;
-	int _skippedCount = 0;
 	bool _isFinishingInterview = false;
 	bool _hasSavedFinalResult = false;
 
@@ -311,7 +310,6 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				feedback = '✗ Incorrect';
 			}
 		} else {
-			_skippedCount++;
 		}
 
 		if (_interviewId != null && _questionIndex < _correctAnswers.length) {
@@ -427,6 +425,14 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		required Map<String, dynamic> confidenceResult,
 		required Map<String, dynamic> emotionReport,
 	}) async {
+		final double relevanceOverall =
+				(completionResult['relevanceOverall'] as num?)?.toDouble() ??
+				(completionResult['avgRelevance'] as num?)?.toDouble() ??
+				0.0;
+		final double accuracyOverall =
+				(completionResult['accuracyOverall'] as num?)?.toDouble() ??
+				(completionResult['avgAccuracy'] as num?)?.toDouble() ??
+				0.0;
 		final int totalCount = (completionResult['totalCount'] as num?)?.toInt() ??
 				(completionResult['totalQuestions'] as num?)?.toInt() ??
 				_questions.length;
@@ -436,18 +442,26 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		final int wrongCount = (completionResult['wrongCount'] as num?)?.toInt() ??
 				(completionResult['wrongAnswers'] as num?)?.toInt() ??
 				0;
+		final int correctCount = (completionResult['correctCount'] as num?)?.toInt() ??
+				(answeredCount - wrongCount).clamp(0, answeredCount);
 		final int skippedCount = (completionResult['skippedCount'] as num?)?.toInt() ??
 				(totalCount - answeredCount).clamp(0, totalCount);
 
 		await InterviewResultService.saveInterviewResultToFirestore(
 			interviewId: interviewId,
-			avgRelevance: (completionResult['avgRelevance'] as num?)?.toDouble() ?? 0.0,
-			avgAccuracy: (completionResult['avgAccuracy'] as num?)?.toDouble() ?? 0.0,
+			avgRelevance: relevanceOverall,
+			avgAccuracy: accuracyOverall,
+			relevanceOverall: relevanceOverall,
+			accuracyOverall: accuracyOverall,
 			answeredCount: answeredCount,
 			skippedCount: skippedCount,
 			wrongCount: wrongCount,
+			correctCount: correctCount,
 			totalCount: totalCount,
 			questionCount: (completionResult['questionCount'] as num?)?.toInt() ?? totalCount,
+			evaluatedAnsweredCount: (completionResult['evaluatedAnsweredCount'] as num?)?.toInt(),
+			resultVersion: completionResult['resultVersion']?.toString(),
+			resultSource: completionResult['resultSource']?.toString() ?? 'attempt_aggregated_in_app',
 			difficulty: completionResult['difficulty']?.toString(),
 			startedAt: completionResult['startedAt'],
 			confidenceAnalysis: confidenceResult,
@@ -465,13 +479,23 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		try {
 			developer.log('Running confidence analysis...', name: 'InterviewScreen');
 
-			final totalQuestions = (completionResult['totalQuestions'] as num?)?.toInt() ?? _questions.length;
-			final answeredQuestions = (completionResult['answeredQuestions'] as num?)?.toInt() ?? _answeredCount;
-			final avgRelevance = (completionResult['avgRelevance'] as num?)?.toDouble() ?? 0.0;
-			final avgAccuracy = (completionResult['avgAccuracy'] as num?)?.toDouble() ?? 0.0;
+			final totalQuestions = (completionResult['totalQuestions'] as num?)?.toInt() ??
+					(completionResult['totalCount'] as num?)?.toInt() ??
+					_questions.length;
+			final answeredQuestions = (completionResult['answeredQuestions'] as num?)?.toInt() ??
+					(completionResult['answeredCount'] as num?)?.toInt() ??
+					_answeredCount;
+			final skippedQuestions = (completionResult['skippedCount'] as num?)?.toInt() ??
+					(totalQuestions - answeredQuestions).clamp(0, totalQuestions);
+			final avgRelevance = (completionResult['relevanceOverall'] as num?)?.toDouble() ??
+					(completionResult['avgRelevance'] as num?)?.toDouble() ??
+					0.0;
+			final avgAccuracy = (completionResult['accuracyOverall'] as num?)?.toDouble() ??
+					(completionResult['avgAccuracy'] as num?)?.toDouble() ??
+					0.0;
 
 			final summary =
-					'Interview completed: $totalQuestions questions, $answeredQuestions answered, $_skippedCount skipped, avgRelevance=${avgRelevance.toStringAsFixed(1)}, avgAccuracy=${avgAccuracy.toStringAsFixed(1)}';
+					'Interview completed: $totalQuestions questions, $answeredQuestions answered, $skippedQuestions skipped, relevanceOverall=${avgRelevance.toStringAsFixed(1)}, accuracyOverall=${avgAccuracy.toStringAsFixed(1)}';
 			final nlpScores = {
 				'avg_relevance': avgRelevance / 100,
 				'avg_accuracy': avgAccuracy / 100,

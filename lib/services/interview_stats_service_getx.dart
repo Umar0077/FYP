@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,21 +18,39 @@ class InterviewStatsService extends GetxService {
     }
 
     return _firestore
-        .collection('interviews')
+        .collection('interview_result')
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .asyncMap((snapshot) async {
       final completedDocs = snapshot.docs.where((doc) {
         final data = doc.data();
+        final status = data['status']?.toString();
+        return status == null || status == 'completed';
+      }).toList();
+
+      if (completedDocs.isNotEmpty) {
+        return await _computeStats(completedDocs);
+      }
+
+      // Legacy fallback for older users whose completed sessions only exist in interviews.
+      final legacySnapshot = await _firestore
+          .collection('interviews')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      final legacyCompletedDocs = legacySnapshot.docs.where((doc) {
+        final data = doc.data();
         return data['status'] == 'completed';
       }).toList();
-      
-      return await _computeStats(completedDocs);
+
+      return await _computeStats(legacyCompletedDocs);
     });
   }
 
   /// Compute statistics from interview documents
-  Future<InterviewStats> _computeStats(List<QueryDocumentSnapshot> docs) async {
+  Future<InterviewStats> _computeStats(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
     if (docs.isEmpty) {
       return InterviewStats.empty();
     }
@@ -55,8 +75,9 @@ class InterviewStatsService extends GetxService {
 
     // Process each interview
     for (var doc in docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      double? sessionScore = await _getSessionScore(doc.id, data);
+      final data = doc.data();
+      final interviewId = data['interviewId']?.toString() ?? doc.id;
+      final double? sessionScore = await _getSessionScore(interviewId, data);
       
       if (sessionScore != null) {
         scores.add(sessionScore);
@@ -81,15 +102,12 @@ class InterviewStatsService extends GetxService {
 
   /// Get score for a single interview session
   Future<double?> _getSessionScore(String interviewId, Map<String, dynamic> data) async {
+    final directScore = _extractSessionScore(data);
+    if (directScore != null) {
+      return directScore;
+    }
+
     try {
-      if (data['overallScore'] != null) {
-        return (data['overallScore'] as num).toDouble();
-      }
-
-      if (data['avgAccuracy'] != null) {
-        return (data['avgAccuracy'] as num).toDouble();
-      }
-
       final attemptsSnapshot = await _firestore
           .collection('interviews')
           .doc(interviewId)
@@ -105,9 +123,12 @@ class InterviewStatsService extends GetxService {
       
       for (var attempt in attemptsSnapshot.docs) {
         final attemptData = attempt.data();
-        
-        if (attemptData['accuracyScore'] != null) {
-          answerScores.add((attemptData['accuracyScore'] as num).toDouble());
+
+        final score = _asPercentage(
+          attemptData['accuracyFinal'] ?? attemptData['accuracyScore'],
+        );
+        if (score != null) {
+          answerScores.add(score);
         }
       }
 
@@ -117,23 +138,96 @@ class InterviewStatsService extends GetxService {
 
       return answerScores.reduce((a, b) => a + b) / answerScores.length;
     } catch (e) {
-      print('Error computing session score: $e');
+      developer.log(
+        'Error computing session score for interviewId=$interviewId: $e',
+        name: 'InterviewStatsService._getSessionScore',
+      );
       return null;
     }
   }
 
+  double? _extractSessionScore(Map<String, dynamic> data) {
+    final scoreFields = [
+      data['accuracyOverall'],
+      data['avgAccuracy'],
+      data['overallScore'],
+      data['avg_accuracy'],
+    ];
+
+    for (final field in scoreFields) {
+      final score = _asPercentage(field);
+      if (score != null) {
+        return score;
+      }
+    }
+
+    final int? answered = _asInt(data['answeredCount'] ?? data['answeredQuestions']);
+    if (answered != null && answered > 0) {
+      final int? explicitCorrect = _asInt(data['correctCount']);
+      final int? wrong = _asInt(data['wrongCount'] ?? data['wrongAnswers']);
+
+      int? correct = explicitCorrect;
+      if (correct == null && wrong != null) {
+        correct = answered - wrong;
+      }
+
+      if (correct != null) {
+        final boundedCorrect = correct.clamp(0, answered);
+        return (boundedCorrect / answered) * 100.0;
+      }
+    }
+
+    return null;
+  }
+
+  double? _asPercentage(dynamic raw) {
+    double? value;
+
+    if (raw is num) {
+      value = raw.toDouble();
+    } else if (raw is String) {
+      value = double.tryParse(raw.trim());
+    }
+
+    if (value == null) {
+      return null;
+    }
+
+    if (value >= 0 && value <= 1) {
+      value = value * 100.0;
+    }
+
+    return value.clamp(0.0, 100.0);
+  }
+
+  int? _asInt(dynamic raw) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw.toInt();
+    }
+    if (raw is String) {
+      return int.tryParse(raw.trim());
+    }
+    return null;
+  }
+
   /// Calculate skill improvement by comparing recent vs older sessions
-  double _calculateSkillImprovement(List<QueryDocumentSnapshot> docs, List<double> scores) {
+  double _calculateSkillImprovement(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    List<double> scores,
+  ) {
     if (docs.length < 2 || scores.length < 2) {
       return 0.5;
     }
 
-    final sortedDocs = List<QueryDocumentSnapshot>.from(docs);
+    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
-      final aData = a.data() as Map<String, dynamic>;
-      final bData = b.data() as Map<String, dynamic>;
-      final aTime = aData['startedAt'] as Timestamp?;
-      final bTime = bData['startedAt'] as Timestamp?;
+      final aData = a.data();
+      final bData = b.data();
+      final aTime = _extractSortTimestamp(aData);
+      final bTime = _extractSortTimestamp(bData);
       if (aTime == null || bTime == null) return 0;
       return aTime.compareTo(bTime);
     });
@@ -161,6 +255,24 @@ class InterviewStatsService extends GetxService {
     final normalized = 0.5 + (difference / 100.0);
     
     return normalized.clamp(0.0, 1.0);
+  }
+
+  Timestamp? _extractSortTimestamp(Map<String, dynamic> data) {
+    final candidates = [
+      data['startedAt'],
+      data['endedAt'],
+      data['updatedAt'],
+      data['computedAt'],
+      data['createdAt'],
+    ];
+
+    for (final item in candidates) {
+      if (item is Timestamp) {
+        return item;
+      }
+    }
+
+    return null;
   }
 
   /// Get recent interviews ordered by date

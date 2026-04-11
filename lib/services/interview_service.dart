@@ -1,14 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
-import 'nlp_evaluation_service.dart';
-import 'embeddings_service.dart';
+import 'nlp_cloud_service.dart';
 
 class InterviewService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final NLPEvaluationService _nlpService = NLPEvaluationService();
-  static final EmbeddingsService _embeddingsService = EmbeddingsService();
+  static final NLPCloudService _nlpCloudService = NLPCloudService();
 
   /// Create a new interview session in Firestore
   static Future<String?> createInterviewSession({
@@ -51,7 +49,7 @@ class InterviewService {
   }
 
   /// Add an attempt (question + answer) to the interview
-  /// This evaluates the answer client-side using NLP and embeddings
+  /// Backend cloud evaluator is the primary scoring source.
   static Future<void> addAttemptToInterview({
     required String interviewId,
     required String questionId,
@@ -76,32 +74,71 @@ class InterviewService {
         'interviewType': interviewType,
         'userId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
+        'evaluationRequestedAt': null,
+        'evaluationRequestError': null,
       };
 
-      // Store without NLP evaluation (will evaluate all at once at interview end)
-      if (status == 'answered' && userAnswer.trim().isNotEmpty) {
-        // Just save the attempt data for now - evaluation happens at interview completion
-        final relevanceFinal = 0.0; // Will be calculated at end
-        final accuracyFinal = 0.0; // Will be calculated at end
-
-        // Add placeholder evaluation results to attempt data
-        attemptData['relevanceScore'] = relevanceFinal;
-        attemptData['accuracyScore'] = accuracyFinal;
+      if (_isAnsweredAttempt(attemptData)) {
+        attemptData['evaluationStatus'] = 'pending';
         attemptData['feedback'] = 'Evaluation pending...';
         attemptData['missingPoints'] = [];
         attemptData['wrongClaims'] = [];
       } else {
-        developer.log('Skipped answer, no evaluation needed', name: 'InterviewService.addAttemptToInterview');
+        developer.log(
+          'Skipped or empty answer. Cloud evaluation is not required for this attempt.',
+          name: 'InterviewService.addAttemptToInterview',
+        );
       }
 
-      // Save attempt to Firestore
-      await _firestore
+      final attemptRef = await _firestore
           .collection('interviews')
           .doc(interviewId)
           .collection('attempts')
           .add(attemptData);
 
-      developer.log('Attempt saved to Firestore', name: 'InterviewService.addAttemptToInterview');
+      developer.log(
+        'Attempt saved to Firestore: interviewId=$interviewId attemptId=${attemptRef.id}',
+        name: 'InterviewService.addAttemptToInterview',
+      );
+
+      if (_isAnsweredAttempt(attemptData)) {
+        try {
+          await attemptRef.set({
+            'evaluationRequestedAt': FieldValue.serverTimestamp(),
+            'evaluationStatus': 'requested',
+            'evaluationRequestError': null,
+          }, SetOptions(merge: true));
+
+          await _evaluateAttemptWithRetry(
+            interviewId: interviewId,
+            attemptId: attemptRef.id,
+          );
+
+          await attemptRef.set({
+            'evaluationStatus': 'evaluated',
+            'evaluationRequestError': null,
+          }, SetOptions(merge: true));
+
+          developer.log(
+            'Cloud evaluation completed for attemptId=${attemptRef.id}',
+            name: 'InterviewService.addAttemptToInterview',
+          );
+        } catch (error, stackTrace) {
+          developer.log(
+            'Cloud evaluation failed for attemptId=${attemptRef.id}: $error',
+            name: 'InterviewService.addAttemptToInterview',
+            error: error,
+            stackTrace: stackTrace,
+            level: 900,
+          );
+
+          await attemptRef.set({
+            'evaluationStatus': 'request_failed',
+            'evaluationRequestError': error.toString(),
+            'evaluationRequestFailedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+      }
     } catch (e) {
       developer.log(
         'Error adding attempt to interview: $e',
@@ -112,163 +149,103 @@ class InterviewService {
     }
   }
 
-  /// Complete the interview session and compute aggregated results
-  /// NOW performs NLP evaluation on all answers at once to save API calls
+  /// Complete interview with backend-first scoring and aggregation.
   static Future<Map<String, dynamic>?> completeInterview(String interviewId) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return null;
 
-      developer.log('Starting batch NLP evaluation for all answers', name: 'InterviewService.completeInterview');
+      developer.log(
+        'Starting attempt-aggregated completion flow for interviewId=$interviewId',
+        name: 'InterviewService.completeInterview',
+      );
 
-      final interviewDoc = await _firestore.collection('interviews').doc(interviewId).get();
+      final interviewRef = _firestore.collection('interviews').doc(interviewId);
+      final interviewDoc = await interviewRef.get();
       final interviewData = interviewDoc.data() ?? <String, dynamic>{};
       final totalCount = (interviewData['totalCount'] as num?)?.toInt() ?? 0;
       final questionCount = (interviewData['questionCount'] as num?)?.toInt() ?? totalCount;
       final difficulty = interviewData['difficulty']?.toString();
       final startedAt = interviewData['startedAt'];
 
-      // Get all attempts
-      final attemptsSnapshot = await _firestore
-          .collection('interviews')
-          .doc(interviewId)
-          .collection('attempts')
-          .get();
+      final attemptsSnapshot = await interviewRef.collection('attempts').get();
+      final aggregate = _aggregateFromAttemptDocs(attemptsSnapshot.docs);
 
-      // Evaluate each answered question with NLP
-      for (final doc in attemptsSnapshot.docs) {
-        final data = doc.data();
-        
-        if (data['status'] == 'answered' && data['userAnswer'] != null && data['userAnswer'].toString().trim().isNotEmpty) {
-          try {
-            final questionText = data['questionText'] ?? '';
-            final correctAnswer = data['correctAnswer'] ?? '';
-            final userAnswer = data['userAnswer'] ?? '';
+      final int fetchedAttemptCount = attemptsSnapshot.docs.length;
+      final int answeredCount = aggregate['answeredCount'] as int? ?? 0;
+      final int skippedCount = aggregate['skippedCount'] as int? ?? 0;
+      final int wrongCount = aggregate['wrongCount'] as int? ?? 0;
+      final int correctCount = aggregate['correctCount'] as int? ?? 0;
+      final int evaluatedAnsweredCount = aggregate['evaluatedAnsweredCount'] as int? ?? 0;
+      final int computedTotalCount = aggregate['totalCount'] as int? ?? 0;
+      final int resolvedTotalCount = computedTotalCount > 0
+          ? computedTotalCount
+          : (totalCount > 0 ? totalCount : questionCount);
+      final double relevanceOverall = aggregate['relevanceOverall'] as double? ?? 0.0;
+      final double accuracyOverall = aggregate['accuracyOverall'] as double? ?? 0.0;
 
-            // Run NLP evaluation
-            final rubricResult = await _nlpService.evaluateWithRubric(
-              questionText: questionText,
-              correctAnswer: correctAnswer,
-              userAnswer: userAnswer,
-            );
+      developer.log(
+        'Attempts fetched for final aggregation: $fetchedAttemptCount',
+        name: 'InterviewService.completeInterview',
+      );
+      developer.log(
+        'Final counts answered=$answeredCount skipped=$skippedCount wrong=$wrongCount correct=$correctCount evaluatedAnswered=$evaluatedAnsweredCount total=$resolvedTotalCount',
+        name: 'InterviewService.completeInterview',
+      );
+      developer.log(
+        'Final averages accuracyOverall=${accuracyOverall.toStringAsFixed(2)} relevanceOverall=${relevanceOverall.toStringAsFixed(2)}',
+        name: 'InterviewService.completeInterview',
+      );
 
-            final geminiRelevance = (rubricResult['relevanceScore'] ?? 50).toDouble();
-            final geminiAccuracy = (rubricResult['accuracyScore'] ?? 50).toDouble();
-
-            // Get text similarity
-            double embeddingSimilarity = 50.0;
-            try {
-              embeddingSimilarity = await _embeddingsService.calculateTextSimilarity(
-                correctAnswer,
-                userAnswer,
-              );
-            } catch (e) {
-              developer.log(
-                'Embeddings failed for ${doc.id}: $e',
-                name: 'InterviewService.completeInterview',
-                level: 900,
-              );
-            }
-
-            // Combine scores
-            final relevanceFinal = (0.6 * geminiRelevance + 0.4 * embeddingSimilarity).clamp(0.0, 100.0);
-            final accuracyFinal = (0.8 * geminiAccuracy + 0.2 * embeddingSimilarity).clamp(0.0, 100.0);
-
-            // Update attempt with scores
-            await doc.reference.update({
-              'relevanceScore': relevanceFinal,
-              'accuracyScore': accuracyFinal,
-              'geminiRelevance': geminiRelevance,
-              'geminiAccuracy': geminiAccuracy,
-              'embeddingSimilarity': embeddingSimilarity,
-              'feedback': rubricResult['feedback'] ?? '',
-              'missingPoints': rubricResult['missingPoints'] ?? [],
-              'wrongClaims': rubricResult['wrongClaims'] ?? [],
-            });
-
-            developer.log(
-              'Evaluated ${doc.id} - R:${relevanceFinal.toStringAsFixed(1)} A:${accuracyFinal.toStringAsFixed(1)}',
-              name: 'InterviewService.completeInterview',
-            );
-          } catch (e) {
-            developer.log(
-              'Failed to evaluate ${doc.id}: $e',
-              name: 'InterviewService.completeInterview',
-              level: 900,
-            );
-            // Continue with next answer even if this one fails
-          }
-        }
-      }
-
-      // Now calculate aggregated scores
-      double totalRelevance = 0.0;
-      double totalAccuracy = 0.0;
-      int answeredCount = 0;
-      int wrongCount = 0;
-
-      // Re-fetch to get updated scores
-      final updatedSnapshot = await _firestore
-          .collection('interviews')
-          .doc(interviewId)
-          .collection('attempts')
-          .get();
-
-      for (final doc in updatedSnapshot.docs) {
-        final data = doc.data();
-        if (data['status'] == 'answered') {
-          answeredCount++;
-          final relevance = (data['relevanceScore'] ?? 0).toDouble();
-          final accuracy = (data['accuracyScore'] ?? 0).toDouble();
-          
-          totalRelevance += relevance;
-          totalAccuracy += accuracy;
-
-          if (accuracy < 50.0) {
-            wrongCount++;
-          }
-        }
-      }
-
-      final avgRelevance = answeredCount > 0 ? totalRelevance / answeredCount : 0.0;
-      final avgAccuracy = answeredCount > 0 ? totalAccuracy / answeredCount : 0.0;
-      final skippedCount = (totalCount - answeredCount).clamp(0, totalCount);
-
-      developer.log('Interview Results: answered=$answeredCount avgRelevance=${avgRelevance.toStringAsFixed(1)} avgAccuracy=${avgAccuracy.toStringAsFixed(1)} wrongAnswers=$wrongCount', name: 'InterviewService.completeInterview');
-
-      // Update interview with aggregated results
-      await _firestore
-          .collection('interviews')
-          .doc(interviewId)
-          .update({
+      await interviewRef.set({
         'endedAt': FieldValue.serverTimestamp(),
         'status': 'completed',
-        'answeredCount': answeredCount,
-        'avgRelevance': avgRelevance,
-        'avgAccuracy': avgAccuracy,
-        'wrongCount': wrongCount,
         'computedAt': FieldValue.serverTimestamp(),
-      });
+        'resultSource': 'attempt_aggregated_in_app',
+        'answeredCount': answeredCount,
+        'skippedCount': skippedCount,
+        'wrongCount': wrongCount,
+        'correctCount': correctCount,
+        'totalCount': resolvedTotalCount,
+        'evaluatedAnsweredCount': evaluatedAnsweredCount,
+        'relevanceOverall': relevanceOverall,
+        'accuracyOverall': accuracyOverall,
+        // Keep legacy aliases for compatibility with existing UI and admin paths.
+        'avgRelevance': relevanceOverall,
+        'avgAccuracy': accuracyOverall,
+        'resultVersion': 'v2',
+      }, SetOptions(merge: true));
 
-      developer.log('Interview completed and results saved', name: 'InterviewService.completeInterview');
+      developer.log(
+        'Interview completion finalized. answered=$answeredCount skipped=$skippedCount wrong=$wrongCount relevanceOverall=${relevanceOverall.toStringAsFixed(1)} accuracyOverall=${accuracyOverall.toStringAsFixed(1)}',
+        name: 'InterviewService.completeInterview',
+      );
 
       return {
         'sessionId': interviewId,
         'interviewId': interviewId,
-        'avgRelevance': avgRelevance,
-        'avgAccuracy': avgAccuracy,
+        'relevanceOverall': relevanceOverall,
+        'accuracyOverall': accuracyOverall,
+        // Legacy compatibility keys.
+        'avgRelevance': relevanceOverall,
+        'avgAccuracy': accuracyOverall,
         'answeredQuestions': answeredCount,
         'answeredCount': answeredCount,
         'skippedCount': skippedCount,
         'wrongAnswers': wrongCount,
         'wrongCount': wrongCount,
-        'totalQuestions': totalCount,
-        'totalCount': totalCount,
+        'correctCount': correctCount,
+        'totalQuestions': resolvedTotalCount,
+        'totalCount': resolvedTotalCount,
         'questionCount': questionCount,
         'difficulty': difficulty,
         'startedAt': startedAt,
+        'evaluatedAnsweredCount': evaluatedAnsweredCount,
+        'resultVersion': 'v2',
+        'resultSource': 'attempt_aggregated_in_app',
         'status': 'completed',
       };
+
     } catch (e) {
       developer.log(
         'Error completing interview: $e',
@@ -280,55 +257,51 @@ class InterviewService {
     }
   }
 
-  /// Recompute interview results (can be called anytime)
+  /// Recompute interview results directly from already evaluated attempts.
   static Future<Map<String, dynamic>?> computeInterviewResults(String interviewId) async {
     try {
-      final attemptsSnapshot = await _firestore
-          .collection('interviews')
-          .doc(interviewId)
-          .collection('attempts')
-          .get();
+      final interviewRef = _firestore.collection('interviews').doc(interviewId);
+      final attemptsSnapshot = await interviewRef.collection('attempts').get();
+      final aggregate = _aggregateFromAttemptDocs(attemptsSnapshot.docs);
 
-      double totalRelevance = 0.0;
-      double totalAccuracy = 0.0;
-      int answeredCount = 0;
-      int wrongCount = 0;
+      final int answeredCount = aggregate['answeredCount'] as int? ?? 0;
+      final int skippedCount = aggregate['skippedCount'] as int? ?? 0;
+      final int wrongCount = aggregate['wrongCount'] as int? ?? 0;
+      final int correctCount = aggregate['correctCount'] as int? ?? 0;
+      final int evaluatedAnsweredCount = aggregate['evaluatedAnsweredCount'] as int? ?? 0;
+      final int totalCount = aggregate['totalCount'] as int? ?? 0;
+      final double relevanceOverall = aggregate['relevanceOverall'] as double? ?? 0.0;
+      final double accuracyOverall = aggregate['accuracyOverall'] as double? ?? 0.0;
 
-      for (final doc in attemptsSnapshot.docs) {
-        final data = doc.data();
-        if (data['status'] == 'answered') {
-          answeredCount++;
-          final relevance = (data['relevanceScore'] ?? 0).toDouble();
-          final accuracy = (data['accuracyScore'] ?? 0).toDouble();
-          
-          totalRelevance += relevance;
-          totalAccuracy += accuracy;
-
-          if (accuracy < 50.0) {
-            wrongCount++;
-          }
-        }
-      }
-
-      final avgRelevance = answeredCount > 0 ? totalRelevance / answeredCount : 0.0;
-      final avgAccuracy = answeredCount > 0 ? totalAccuracy / answeredCount : 0.0;
-
-      final results = {
-        'answeredCount': answeredCount,
-        'avgRelevance': avgRelevance,
-        'avgAccuracy': avgAccuracy,
-        'wrongCount': wrongCount,
-      };
-
-      await _firestore
-          .collection('interviews')
-          .doc(interviewId)
-          .update({
-        ...results,
+      await interviewRef.set({
         'computedAt': FieldValue.serverTimestamp(),
-      });
+        'resultSource': 'attempt_aggregated_in_app',
+        'resultVersion': 'v2',
+        'answeredCount': answeredCount,
+        'skippedCount': skippedCount,
+        'wrongCount': wrongCount,
+        'correctCount': correctCount,
+        'totalCount': totalCount,
+        'evaluatedAnsweredCount': evaluatedAnsweredCount,
+        'relevanceOverall': relevanceOverall,
+        'accuracyOverall': accuracyOverall,
+        'avgRelevance': relevanceOverall,
+        'avgAccuracy': accuracyOverall,
+      }, SetOptions(merge: true));
 
-      return results;
+      return {
+        'answeredCount': answeredCount,
+        'skippedCount': skippedCount,
+        'wrongCount': wrongCount,
+        'correctCount': correctCount,
+        'totalCount': totalCount,
+        'evaluatedAnsweredCount': evaluatedAnsweredCount,
+        'relevanceOverall': relevanceOverall,
+        'accuracyOverall': accuracyOverall,
+        'avgRelevance': relevanceOverall,
+        'avgAccuracy': accuracyOverall,
+        'resultSource': 'attempt_aggregated_in_app',
+      };
     } catch (e) {
       developer.log(
         'Error computing interview results: $e',
@@ -380,5 +353,111 @@ class InterviewService {
         .collection('attempts')
         .orderBy('createdAt')
         .snapshots();
+  }
+
+  static bool _isAnsweredAttempt(Map<String, dynamic> attemptData) {
+    final status = attemptData['status']?.toString() ?? '';
+    final userAnswer = attemptData['userAnswer']?.toString() ?? '';
+    return status == 'answered' && userAnswer.trim().isNotEmpty;
+  }
+
+  static Future<void> _evaluateAttemptWithRetry({
+    required String interviewId,
+    required String attemptId,
+    int maxAttempts = 2,
+  }) async {
+    Object? lastError;
+
+    for (int run = 1; run <= maxAttempts; run++) {
+      try {
+        await _nlpCloudService.evaluateAttempt(
+          interviewId: interviewId,
+          attemptId: attemptId,
+        );
+        return;
+      } catch (error, stackTrace) {
+        lastError = error;
+
+        developer.log(
+          'Cloud evaluation attempt $run/$maxAttempts failed for attemptId=$attemptId: $error',
+          name: 'InterviewService._evaluateAttemptWithRetry',
+          error: error,
+          stackTrace: stackTrace,
+          level: run == maxAttempts ? 1000 : 900,
+        );
+
+        if (run < maxAttempts) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+        }
+      }
+    }
+
+    if (lastError is Exception) {
+      throw lastError;
+    }
+
+    throw Exception(lastError?.toString() ?? 'Unknown cloud evaluation failure');
+  }
+
+  static Map<String, dynamic> _aggregateFromAttemptDocs(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    int answeredCount = 0;
+    int skippedCount = 0;
+    int wrongCount = 0;
+    int evaluatedAnsweredCount = 0;
+    double totalAccuracy = 0.0;
+    double totalRelevance = 0.0;
+
+    for (final doc in docs) {
+      final data = doc.data();
+
+      final String status = data['status']?.toString() ?? '';
+      final String userAnswer = data['userAnswer']?.toString().trim() ?? '';
+
+      if (status == 'skipped') {
+        skippedCount++;
+      }
+
+      if (userAnswer.isNotEmpty) {
+        answeredCount++;
+
+        final dynamic accuracyRaw = data['accuracyFinal'];
+        final dynamic relevanceRaw = data['relevanceFinal'];
+
+        if (accuracyRaw is num && relevanceRaw is num) {
+          final double accuracy = accuracyRaw.toDouble();
+          final double relevance = relevanceRaw.toDouble();
+
+          evaluatedAnsweredCount++;
+          totalAccuracy += accuracy;
+          totalRelevance += relevance;
+
+          if (accuracy < 50.0) {
+            wrongCount++;
+          }
+        }
+      }
+    }
+
+    final int correctCount = (answeredCount - wrongCount).clamp(0, answeredCount);
+    final int totalCount = answeredCount + skippedCount;
+    final double accuracyOverall = evaluatedAnsweredCount > 0
+        ? totalAccuracy / evaluatedAnsweredCount
+        : 0.0;
+    final double relevanceOverall = evaluatedAnsweredCount > 0
+        ? totalRelevance / evaluatedAnsweredCount
+        : 0.0;
+
+    return <String, dynamic>{
+      'answeredCount': answeredCount,
+      'skippedCount': skippedCount,
+      'wrongCount': wrongCount,
+      'correctCount': correctCount,
+      'totalCount': totalCount,
+      'evaluatedAnsweredCount': evaluatedAnsweredCount,
+      'accuracyOverall': accuracyOverall,
+      'relevanceOverall': relevanceOverall,
+    };
   }
 }
