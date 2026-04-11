@@ -117,6 +117,8 @@ class AdminInterviewManagementScreen extends StatelessWidget {
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 _StatusBadge(status: interview.status),
@@ -129,14 +131,16 @@ class AdminInterviewManagementScreen extends StatelessWidget {
                                 fontSize: 12,
                                 color: isDark ? Colors.white70 : const Color(0xFF27308A),
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 12),
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
                                 _MetricChip(label: 'answeredCount', value: '${interview.answeredCount}'),
-                                const SizedBox(width: 8),
                                 _MetricChip(label: 'skippedCount', value: '${interview.skippedCount}'),
-                                const SizedBox(width: 8),
                                 _MetricChip(label: 'wrongCount', value: '${interview.wrongCount}'),
                               ],
                             ),
@@ -144,6 +148,8 @@ class AdminInterviewManagementScreen extends StatelessWidget {
                             Text(
                               'avgAccuracy: ${interview.avgAccuracy.toStringAsFixed(1)}% • avgRelevance: ${interview.avgRelevance.toStringAsFixed(1)}%',
                               style: const TextStyle(fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 8),
                             Text(

@@ -89,10 +89,12 @@ class GeminiService {
     
     // Determine question count
     int finalCount;
-    if (difficulty.toLowerCase() == 'hard') {
+    if (count != null && count > 0) {
+      finalCount = count;
+    } else if (difficulty.toLowerCase() == 'hard') {
       finalCount = 3 + random.nextInt(3); // Random between 3-5
     } else {
-      finalCount = count ?? 3; // Default to 3 questions
+      finalCount = 3; // Default to 3 questions
     }
 
     // Create simplified prompt for Gemini to generate questions based on difficulty
@@ -200,10 +202,12 @@ Question 2 text|Correct answer 2 text
     
     // Determine question count
     int finalCount;
-    if (difficulty.toLowerCase() == 'hard') {
+    if (count != null && count > 0) {
+      finalCount = count;
+    } else if (difficulty.toLowerCase() == 'hard') {
       finalCount = 3 + random.nextInt(3); // Random between 3-5 (reduced from 5-15)
     } else {
-      finalCount = count ?? 3; // Default to 3 questions
+      finalCount = 3; // Default to 3 questions
     }
 
     // Create simplified prompt for Gemini to generate questions based on difficulty

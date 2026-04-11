@@ -58,6 +58,8 @@ class InterviewStatsService extends GetxService {
     int totalInterviews = docs.length;
     List<double> scores = [];
     int successfulInterviews = 0;
+    int totalAnsweredAcrossInterviews = 0;
+    int totalWrongAcrossInterviews = 0;
     double successThreshold = 50.0; // default threshold lowered to 50%
 
     // Get user's custom threshold if it exists
@@ -77,6 +79,12 @@ class InterviewStatsService extends GetxService {
     for (var doc in docs) {
       final data = doc.data();
       final interviewId = data['interviewId']?.toString() ?? doc.id;
+      final _SuccessCounts? countData = _extractSuccessCounts(data);
+      if (countData != null) {
+        totalAnsweredAcrossInterviews += countData.answered;
+        totalWrongAcrossInterviews += countData.wrong;
+      }
+
       final double? sessionScore = await _getSessionScore(interviewId, data);
       
       if (sessionScore != null) {
@@ -89,8 +97,26 @@ class InterviewStatsService extends GetxService {
 
     // Calculate metrics
     double averageScore = scores.isEmpty ? 0.0 : scores.reduce((a, b) => a + b) / scores.length;
-    double successRate = scores.isEmpty ? 0.0 : (successfulInterviews / scores.length) * 100;
+    final int correctAcrossInterviews =
+        (totalAnsweredAcrossInterviews - totalWrongAcrossInterviews)
+            .clamp(0, totalAnsweredAcrossInterviews);
+
+    // Prefer score-based success when interview scoring exists (e.g. accuracyOverall/avgAccuracy).
+    // Fall back to count-based or threshold pass-rate only for legacy records without scores.
+    final double successRate;
+    if (scores.isNotEmpty) {
+      successRate = averageScore;
+    } else if (totalAnsweredAcrossInterviews > 0) {
+      successRate = (correctAcrossInterviews / totalAnsweredAcrossInterviews) * 100;
+    } else {
+      successRate = scores.isEmpty ? 0.0 : (successfulInterviews / scores.length) * 100;
+    }
     double skillImprovement = _calculateSkillImprovement(docs, scores);
+
+    developer.log(
+      'Dashboard stats computed: interviews=$totalInterviews avgScore=${averageScore.toStringAsFixed(2)} answered=$totalAnsweredAcrossInterviews wrong=$totalWrongAcrossInterviews successRate=${successRate.toStringAsFixed(2)}',
+      name: 'InterviewStatsService._computeStats',
+    );
 
     return InterviewStats(
       interviewsCompleted: totalInterviews,
@@ -211,6 +237,30 @@ class InterviewStatsService extends GetxService {
       return int.tryParse(raw.trim());
     }
     return null;
+  }
+
+  _SuccessCounts? _extractSuccessCounts(Map<String, dynamic> data) {
+    final int? answered = _asInt(data['answeredCount'] ?? data['answeredQuestions']);
+    if (answered == null || answered <= 0) {
+      return null;
+    }
+
+    final int? correct = _asInt(data['correctCount']);
+    final int? wrong = _asInt(data['wrongCount'] ?? data['wrongAnswers']);
+
+    int? computedWrong = wrong;
+    if (computedWrong == null && correct != null) {
+      computedWrong = answered - correct;
+    }
+
+    if (computedWrong == null) {
+      return null;
+    }
+
+    return _SuccessCounts(
+      answered: answered,
+      wrong: computedWrong.clamp(0, answered),
+    );
   }
 
   /// Calculate skill improvement by comparing recent vs older sessions
@@ -360,5 +410,15 @@ class InterviewSession {
     required this.title,
     required this.dateTime,
     required this.score,
+  });
+}
+
+class _SuccessCounts {
+  final int answered;
+  final int wrong;
+
+  const _SuccessCounts({
+    required this.answered,
+    required this.wrong,
   });
 }

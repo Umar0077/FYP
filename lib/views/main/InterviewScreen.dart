@@ -51,6 +51,7 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 	bool _isListening = false;
 	bool _speechAvailable = false;
 	int _answeredCount = 0;
+	int _requiredAnswerCount = 0;
 	bool _isFinishingInterview = false;
 	bool _hasSavedFinalResult = false;
 
@@ -210,9 +211,13 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 
 	Future<void> _loadQuestions() async {
 		try {
+			final int requestedCount = (widget.count != null && widget.count! > 0)
+					? widget.count!
+					: 3;
+
 			final result = await _gemini.generateQuestionsWithAnswers(
 				difficulty: widget.difficulty,
-				count: widget.count,
+				count: requestedCount,
 				position: widget.position,
 				interviewType: widget.interviewType,
 			);
@@ -224,11 +229,12 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				setState(() {
 					_questions = qs;
 					_correctAnswers = correctAnswers;
+					_requiredAnswerCount = requestedCount > 0 ? requestedCount : qs.length;
 				});
 
 				_interviewId = await InterviewService.createInterviewSession(
 					difficulty: widget.difficulty,
-					questionCount: qs.length,
+					questionCount: _requiredAnswerCount > 0 ? _requiredAnswerCount : qs.length,
 					position: widget.position,
 					interviewType: widget.interviewType,
 				);
@@ -260,6 +266,37 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		}
 	}
 
+	Future<bool> _appendReplacementQuestion() async {
+		try {
+			final result = await _gemini.generateQuestionsWithAnswers(
+				difficulty: widget.difficulty,
+				count: 1,
+				position: widget.position,
+				interviewType: widget.interviewType,
+			);
+
+			final nextQuestions = result['questions'] ?? const <String>[];
+			final nextAnswers = result['answers'] ?? const <String>[];
+
+			if (nextQuestions.isEmpty || nextAnswers.isEmpty) {
+				return false;
+			}
+
+			_questions.add(nextQuestions.first);
+			_correctAnswers.add(nextAnswers.first);
+			return true;
+		} catch (e, st) {
+			developer.log(
+				'Failed to load replacement question: $e',
+				name: 'InterviewScreen._appendReplacementQuestion',
+				error: e,
+				stackTrace: st,
+				level: 900,
+			);
+			return false;
+		}
+	}
+
 	void _startTimer() {
 		_timer?.cancel();
 		_timeLeft = 20;
@@ -273,15 +310,15 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		});
 	}
 
-	Future<void> _nextQuestion({bool auto = false}) async {
+	Future<void> _nextQuestion({bool auto = false, bool forceSkip = false}) async {
 		if (_checking || _questions.isEmpty) return;
 		setState(() => _checking = true);
 
 		_timer?.cancel();
 		final currentQuestion = _questions[_questionIndex];
-		final userAnswer = _answerController.text.trim();
+		final userAnswer = forceSkip ? '' : _answerController.text.trim();
 
-		if (!auto && userAnswer.isEmpty) {
+		if (!auto && !forceSkip && userAnswer.isEmpty) {
 			ScaffoldMessenger.of(context).showSnackBar(
 				const SnackBar(content: Text('Please type your answer before proceeding.')),
 			);
@@ -327,6 +364,27 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 
 		setState(() => _feedback = feedback);
 		await Future.delayed(const Duration(seconds: 2));
+
+		final int requiredAnswers = _requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length;
+		if (_answeredCount >= requiredAnswers) {
+			_showFinishDialog();
+			return;
+		}
+
+		if (_questionIndex >= _questions.length - 1) {
+			final bool loadedReplacement = await _appendReplacementQuestion();
+			if (!loadedReplacement) {
+				_questions.add('Describe a challenging technical problem you solved and how you solved it.');
+				_correctAnswers.add('A strong answer explains the problem context, your technical approach, trade-offs, and measurable outcome.');
+				if (mounted) {
+					ScaffoldMessenger.of(context).showSnackBar(
+						const SnackBar(
+							content: Text('Could not load a new AI question. Continuing with a fallback question.'),
+						),
+					);
+				}
+			}
+		}
 
 		if (_questionIndex < _questions.length - 1) {
 			setState(() {
@@ -393,7 +451,7 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			builder: (_) => AlertDialog(
 				title: const Text('Interview Complete!'),
 				content: Text(
-					'You have answered all ${_questions.length} questions. What would you like to do next?',
+					'You have answered all ${_requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length} required questions. What would you like to do next?',
 				),
 				actions: [
 					TextButton(
@@ -479,9 +537,11 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		try {
 			developer.log('Running confidence analysis...', name: 'InterviewScreen');
 
+			final requiredQuestions = (completionResult['questionCount'] as num?)?.toInt() ??
+					(_requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length);
 			final totalQuestions = (completionResult['totalQuestions'] as num?)?.toInt() ??
 					(completionResult['totalCount'] as num?)?.toInt() ??
-					_questions.length;
+					requiredQuestions;
 			final answeredQuestions = (completionResult['answeredQuestions'] as num?)?.toInt() ??
 					(completionResult['answeredCount'] as num?)?.toInt() ??
 					_answeredCount;
@@ -495,12 +555,12 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 					0.0;
 
 			final summary =
-					'Interview completed: $totalQuestions questions, $answeredQuestions answered, $skippedQuestions skipped, relevanceOverall=${avgRelevance.toStringAsFixed(1)}, accuracyOverall=${avgAccuracy.toStringAsFixed(1)}';
+					'Interview completed: target=$requiredQuestions answered, actual answered=$answeredQuestions, skipped=$skippedQuestions, total asked=$totalQuestions, relevanceOverall=${avgRelevance.toStringAsFixed(1)}, accuracyOverall=${avgAccuracy.toStringAsFixed(1)}';
 			final nlpScores = {
 				'avg_relevance': avgRelevance / 100,
 				'avg_accuracy': avgAccuracy / 100,
-				'answered_ratio': totalQuestions == 0 ? 0.0 : answeredQuestions / totalQuestions,
-				'completion_rate': totalQuestions == 0 ? 0.0 : (_questionIndex + 1) / totalQuestions,
+				'answered_ratio': requiredQuestions == 0 ? 0.0 : answeredQuestions / requiredQuestions,
+				'completion_rate': requiredQuestions == 0 ? 0.0 : answeredQuestions / requiredQuestions,
 			};
 
 			final confidenceResult = await _confidenceAnalyzer.analyzeConfidence(
@@ -625,7 +685,7 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 																decoration: BoxDecoration(color: chipColor, borderRadius: BorderRadius.circular(14)),
 																child: Text('Question ${_questionIndex + 1}', style: TextStyle(color: textColor, fontSize: 12)),
 															),
-															Text('20 sec', style: TextStyle(color: labelColor)),
+															Text('Answered $_answeredCount/${_requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length}', style: TextStyle(color: labelColor)),
 														],
 													),
 													const SizedBox(height: 16),
@@ -717,6 +777,16 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 																),
 																onPressed: () => Navigator.of(context).pop(),
 																child: const Text('Back'),
+															),
+															OutlinedButton(
+																style: OutlinedButton.styleFrom(
+																	side: const BorderSide(color: Colors.orange),
+																	shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+																	foregroundColor: Colors.orange,
+																	padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+																),
+																onPressed: _checking ? null : () => _nextQuestion(forceSkip: true),
+																child: const Text('Skip'),
 															),
 															ElevatedButton(
 																style: ElevatedButton.styleFrom(
