@@ -1,16 +1,27 @@
-# nova_prep
+# NovaPrep
 
-A new Flutter project.
+NovaPrep is an AI-powered interview preparation platform built with Flutter, Firebase, and Gemini.
 
-## Getting Started
+## Full Project Documentation
 
-This project is a starting point for a Flutter application.
+Complete technical documentation is available in:
 
-A few resources to get you started if this is your first Flutter project:
+- [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+This includes:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- full feature list
+- user and admin workflows
+- module and folder architecture
+- Firebase data model and rules overview
+- cloud function evaluation pipeline
+- setup, run, and test instructions
+- complete source inventory
+
+## Quick Start
+
+```bash
+flutter pub get
+flutter run
+```
+

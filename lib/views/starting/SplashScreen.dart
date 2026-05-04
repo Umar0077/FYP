@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:get/get.dart';
+import '../../controllers/auth_controller.dart';
 
 class SplashScreen extends StatefulWidget {
 	const SplashScreen({super.key});
@@ -67,6 +69,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 		
 		Future<void>.delayed(const Duration(seconds: 2), () async {
 			try {
+				final AuthController authController = Get.find<AuthController>();
 				final SharedPreferences prefs = await SharedPreferences.getInstance();
 				final bool seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
 				if (!seenOnboarding) {
@@ -80,8 +83,15 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 				// If onboarding was seen, check if a user is already persisted
 				final User? immediateUser = FirebaseAuth.instance.currentUser;
 				if (immediateUser != null) {
+					final bool canAccess = await authController.canAccessWithCurrentSession();
 					if (!mounted) return;
-					Navigator.of(context).pushReplacementNamed('/home');
+					if (!canAccess) {
+						Navigator.of(context).pushReplacementNamed('/login');
+						return;
+					}
+					final bool requiresConsent = await authController.requiresCameraConsent();
+					if (!mounted) return;
+					Navigator.of(context).pushReplacementNamed(requiresConsent ? '/camera-consent' : '/home');
 					return;
 				}
 
@@ -93,7 +103,15 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 							.firstWhere((_) => true, orElse: () => null);
 					if (!mounted) return;
 					if (streamedUser != null) {
-						Navigator.of(context).pushReplacementNamed('/home');
+						final bool canAccess = await authController.canAccessWithCurrentSession();
+						if (!mounted) return;
+						if (!canAccess) {
+							Navigator.of(context).pushReplacementNamed('/login');
+							return;
+						}
+						final bool requiresConsent = await authController.requiresCameraConsent();
+						if (!mounted) return;
+						Navigator.of(context).pushReplacementNamed(requiresConsent ? '/camera-consent' : '/home');
 					} else {
 						Navigator.of(context).pushReplacementNamed('/login');
 					}

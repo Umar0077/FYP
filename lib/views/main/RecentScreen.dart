@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../widgets/AppScaffold.dart';
 import '../ui/ui_colors.dart';
 import '../../controllers/recent_interviews_controller.dart';
+import 'InterviewResultScreen.dart';
 import 'package:intl/intl.dart';
 
 class RecentScreen extends StatelessWidget {
@@ -94,12 +95,8 @@ class RecentScreen extends StatelessWidget {
                       dateTime: session.dateTime,
                       score: session.score,
                       onTap: () {
-                        // TODO: Navigate to interview detail
-                        Get.snackbar(
-                          'Interview Details',
-                          'View details for ${session.title}',
-                          snackPosition: SnackPosition.BOTTOM,
-                          duration: const Duration(seconds: 2),
+                        Get.to(
+                          () => InterviewResultScreen(interviewId: session.id),
                         );
                       },
                     );

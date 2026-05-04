@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 function getGeminiClient() {
-  const apiKey = "AIzaSyClS4elyb-G8wRReuKnL3rkZgAYfepYEnk";
+  const apiKey = "AIzaSyBPqumlytFcCalDClhQhJ5gAOjI3xkBWu8";
 
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set");

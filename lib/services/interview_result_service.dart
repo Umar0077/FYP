@@ -76,6 +76,29 @@ class InterviewResultService {
     final double confidenceLevel = _normalizedConfidenceLevel(confidenceAnalysis);
     final String confidenceLabel = _confidenceLabel(confidenceAnalysis, confidenceLevel);
     final String confidenceSummary = _confidenceSummary(confidenceAnalysis);
+    final Map<String, dynamic> normalizedConfidenceAnalysis = _normalizedConfidenceAnalysisPayload(
+      confidenceAnalysis,
+      confidenceLevel: confidenceLevel,
+      confidenceLabel: confidenceLabel,
+      confidenceSummary: confidenceSummary,
+    );
+    final List<String> emotionBasedObservations = _asStringList(
+      normalizedConfidenceAnalysis['emotion_based_observations'],
+    );
+    final List<String> coachingTips = _asStringList(
+      normalizedConfidenceAnalysis['coaching_tips'],
+    );
+    final Map<String, dynamic>? emotionSummaryUsed = _asMap(
+      normalizedConfidenceAnalysis['emotion_summary_used'],
+    );
+    final bool fallbackUsed = normalizedConfidenceAnalysis['fallback_used'] == true;
+    final String fallbackReason =
+        normalizedConfidenceAnalysis['fallback_reason']?.toString().trim() ?? '';
+    final String analysisSource =
+        normalizedConfidenceAnalysis['analysis_source']?.toString().trim().isNotEmpty == true
+            ? normalizedConfidenceAnalysis['analysis_source'].toString().trim()
+            : 'unknown';
+
     final double effectiveRelevanceOverall = relevanceOverall ?? avgRelevance;
     final double effectiveAccuracyOverall = accuracyOverall ?? avgAccuracy;
     final int effectiveEvaluatedAnsweredCount = evaluatedAnsweredCount ?? answeredCount;
@@ -98,7 +121,7 @@ class InterviewResultService {
       'avgAccuracy': avgAccuracy,
       'confidenceLevel': confidenceLevel,
       'confidenceLabel': confidenceLabel,
-      'confidenceAnalysis': confidenceAnalysis,
+      'confidenceAnalysis': normalizedConfidenceAnalysis,
       'answeredCount': answeredCount,
       'answeredQuestions': answeredCount,
       'skippedCount': skippedCount,
@@ -116,6 +139,14 @@ class InterviewResultService {
       'endedAt': FieldValue.serverTimestamp(),
       'computedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'analysisSource': analysisSource,
+      'fallbackUsed': fallbackUsed,
+      if (fallbackReason.isNotEmpty) 'fallbackReason': fallbackReason,
+      if (emotionBasedObservations.isNotEmpty)
+        'emotion_based_observations': emotionBasedObservations,
+      if (coachingTips.isNotEmpty) 'coaching_tips': coachingTips,
+      if (emotionSummaryUsed != null && emotionSummaryUsed.isNotEmpty)
+        'emotion_summary_used': emotionSummaryUsed,
       if (effectiveStartedAt != null) 'startedAt': effectiveStartedAt,
       if (confidenceSummary.isNotEmpty) 'confidenceAnalysisSummary': confidenceSummary,
       if (emotionReport != null && emotionReport.isNotEmpty) 'emotionReport': emotionReport,
@@ -131,6 +162,11 @@ class InterviewResultService {
     developer.log('avgAccuracy=$avgAccuracy', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('correctCount=$effectiveCorrectCount', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('confidenceLevel=$confidenceLevel', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('confidenceLabel=$confidenceLabel', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('analysisSource=$analysisSource fallbackUsed=$fallbackUsed fallbackReason=$fallbackReason', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('confidenceAnalysisKeys=${normalizedConfidenceAnalysis.keys.join(', ')}', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('emotionReportKeys=${emotionReport?.keys.toList() ?? const <dynamic>[]}', name: 'InterviewResultService.saveInterviewResultToFirestore');
+    developer.log('Final Firestore payload keys=${payload.keys.join(', ')}', name: 'InterviewResultService.saveInterviewResultToFirestore');
     developer.log('documentPath=${docRef.path}', name: 'InterviewResultService.saveInterviewResultToFirestore');
 
     try {
@@ -141,7 +177,18 @@ class InterviewResultService {
         'accuracyOverall': effectiveAccuracyOverall,
         'avgRelevance': avgRelevance,
         'avgAccuracy': avgAccuracy,
-        'confidenceAnalysis': confidenceAnalysis,
+        'confidenceAnalysis': normalizedConfidenceAnalysis,
+        'confidenceLevel': confidenceLevel,
+        'confidenceLabel': confidenceLabel,
+        'analysisSource': analysisSource,
+        'fallbackUsed': fallbackUsed,
+        if (fallbackReason.isNotEmpty) 'fallbackReason': fallbackReason,
+        if (confidenceSummary.isNotEmpty) 'confidenceAnalysisSummary': confidenceSummary,
+        if (emotionBasedObservations.isNotEmpty)
+          'emotion_based_observations': emotionBasedObservations,
+        if (coachingTips.isNotEmpty) 'coaching_tips': coachingTips,
+        if (emotionSummaryUsed != null && emotionSummaryUsed.isNotEmpty)
+          'emotion_summary_used': emotionSummaryUsed,
         if (emotionReport != null && emotionReport.isNotEmpty) 'emotionReport': emotionReport,
         'answeredCount': answeredCount,
         'skippedCount': skippedCount,
@@ -236,6 +283,60 @@ class InterviewResultService {
         confidenceAnalysis['confidenceAnalysisSummary'] ??
         confidenceAnalysis['summary'];
     return summary?.toString().trim() ?? '';
+  }
+
+  static Map<String, dynamic> _normalizedConfidenceAnalysisPayload(
+    Map<String, dynamic> confidenceAnalysis, {
+    required double confidenceLevel,
+    required String confidenceLabel,
+    required String confidenceSummary,
+  }) {
+    final normalized = Map<String, dynamic>.from(confidenceAnalysis);
+    normalized['confidence_level'] = confidenceLevel;
+    normalized['confidence_label'] = confidenceLabel;
+
+    if (confidenceSummary.isNotEmpty &&
+        (normalized['reasoning']?.toString().trim().isEmpty ?? true)) {
+      normalized['reasoning'] = confidenceSummary;
+    }
+
+    if (!normalized.containsKey('emotion_based_observations')) {
+      normalized['emotion_based_observations'] = const <String>[];
+    }
+    if (!normalized.containsKey('coaching_tips')) {
+      normalized['coaching_tips'] = const <String>[];
+    }
+
+    if (!normalized.containsKey('fallback_used')) {
+      normalized['fallback_used'] = false;
+    }
+
+    if (!normalized.containsKey('analysis_source') ||
+        normalized['analysis_source']?.toString().trim().isEmpty == true) {
+      normalized['analysis_source'] = 'unknown';
+    }
+
+    return normalized;
+  }
+
+  static Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, val) => MapEntry(key.toString(), val));
+    }
+    return null;
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
   }
 
   static int _asInt(dynamic value) {

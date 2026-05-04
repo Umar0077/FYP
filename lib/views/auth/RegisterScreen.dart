@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:get/get.dart';
 import '../../controllers/auth_controller.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -35,7 +36,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 	Future<void> _register() async {
 		if (!_formKey.currentState!.validate()) return;
 		setState(() => _loading = true);
-		final AuthController authController = AuthController();
+		final AuthController authController = Get.find<AuthController>();
 		try {
 			final String email = _emailController.text.trim();
 			final String password = _passwordController.text;
@@ -57,7 +58,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 				dobIso = null;
 			}
 
-			await authController.register(
+			final bool success = await authController.register(
 				name: name,
 				email: email,
 				password: password,
@@ -65,7 +66,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
 				dobText: dobText,
 				dobIso: dobIso,
 			);
-			if (mounted) Navigator.of(context).pushReplacementNamed('/home');
+			if (!mounted) return;
+
+			if (!success) {
+				final String message = authController.errorMessage.value.isNotEmpty
+					? authController.errorMessage.value
+					: 'Registration failed';
+				ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+				return;
+			}
+
+			ScaffoldMessenger.of(context).showSnackBar(
+				SnackBar(
+					content: Text(
+						'Verification email sent to $email. Verify your email before logging in.',
+					),
+				),
+			);
+			Navigator.of(context).pushReplacementNamed('/login');
 		} on FirebaseAuthException catch (e) {
 			final String message = e.message ?? 'Registration failed';
 			if (!mounted) return;
@@ -208,7 +226,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 													icon: Icon(_obscure1 ? Icons.visibility_off : Icons.visibility, color: secondaryTextColor),
 													onPressed: () => setState(() => _obscure1 = !_obscure1),
 												),
-												validator: (String? v) => (v == null || v.length < 6) ? 'Min 6 chars' : null,
+																validator: _validatePassword,
 												fillColor: inputFillColor,
 												borderColor: inputBorderColor,
 												focusedBorderColor: inputFocusedBorderColor,
@@ -226,7 +244,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 													icon: Icon(_obscure2 ? Icons.visibility_off : Icons.visibility, color: secondaryTextColor),
 													onPressed: () => setState(() => _obscure2 = !_obscure2),
 												),
-												validator: (String? v) => v != _passwordController.text ? 'Passwords do not match' : null,
+																validator: _validateConfirmPassword,
 												fillColor: inputFillColor,
 												borderColor: inputBorderColor,
 												focusedBorderColor: inputFocusedBorderColor,
@@ -255,14 +273,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 											_SocialButton(
 												label: 'Continue with Google',
 												assetPath: 'assets/images/google.png',
-												onPressed: () {},
-												borderColor: inputBorderColor,
-												textColor: primaryTextColor,
-											),
-											const SizedBox(height: 10),
-											_SocialButton(
-												label: 'Continue with Facebook',
-												assetPath: 'assets/images/facebook.png',
 												onPressed: () {},
 												borderColor: inputBorderColor,
 												textColor: primaryTextColor,
@@ -305,6 +315,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
 				],
 			),
 		);
+	}
+
+	String? _validatePassword(String? value) {
+		if (value == null || value.isEmpty) return 'Password is required';
+		if (value.length < 6) return 'Password must be at least 6 characters';
+		if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Password must include 1 uppercase letter';
+		if (!RegExp(r'[^A-Za-z0-9]').hasMatch(value)) return 'Password must include 1 special character';
+		return null;
+	}
+
+	String? _validateConfirmPassword(String? value) {
+		final String? passwordError = _validatePassword(value);
+		if (passwordError != null) return passwordError;
+		if (value != _passwordController.text) return 'Passwords do not match';
+		return null;
 	}
 
 	String? _required(String? v) => (v == null || v.isEmpty) ? 'Required' : null;

@@ -26,13 +26,18 @@ class AppScaffold extends StatelessWidget {
 	@override
 	Widget build(BuildContext context) {
 		final int currentIndex = _inferIndexFromRoute(ModalRoute.of(context)?.settings.name ?? '');
+		final bool canPop = Navigator.of(context).canPop();
+		final bool showLeadingBack = onBack != null || canPop;
 		return Scaffold(
 			backgroundColor: backgroundColor,
 			resizeToAvoidBottomInset: resizeToAvoidBottomInset,
 			appBar: showAppBar
 					? AppBar(
-							leading: Navigator.of(context).canPop()
-									? IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded), onPressed: onBack ?? () => Navigator.of(context).pop())
+							leading: showLeadingBack
+									? IconButton(
+											icon: const Icon(Icons.arrow_back_ios_new_rounded),
+											onPressed: onBack ?? () => Navigator.of(context).pop(),
+									  )
 									: null,
 							title: appBarTitle != null ? Text(appBarTitle!) : null,
 							actions: actions,

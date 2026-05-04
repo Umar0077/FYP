@@ -28,6 +28,11 @@ class AppConstants {
   // Timeouts
   static const int requestTimeoutSeconds = 30;
 
+  // Interview module
+  static const int interviewQuestionDurationSeconds = 60;
+  static const int interviewSpeechListenForSeconds = 55;
+  static const int interviewSpeechPauseForSeconds = 3;
+
   // Error messages
   static const String apiKeyMissingError = 'API key not configured. Please add it in Settings.';
   static const String networkError = 'Network error. Please check your connection.';

@@ -154,13 +154,24 @@ class PredictFrameResult {
 }
 
 class StopSessionResponse {
+  final Map<String, dynamic> rawResponse;
   final Map<String, dynamic> emotionReport;
-  
-  StopSessionResponse({required this.emotionReport});
+
+  StopSessionResponse({required this.rawResponse, required this.emotionReport});
   
   factory StopSessionResponse.fromJson(Map<String, dynamic> json) {
+    final nestedDirect = _asStringDynamicMap(json['emotion_report']) ??
+        _asStringDynamicMap(json['emotionReport']) ??
+        _asStringDynamicMap(json['report']);
+
+    final nestedFromData = _asStringDynamicMap(_asStringDynamicMap(json['data'])?['emotion_report']) ??
+        _asStringDynamicMap(_asStringDynamicMap(json['data'])?['emotionReport']);
+
+    final normalizedReport = nestedDirect ?? nestedFromData ?? json;
+
     return StopSessionResponse(
-      emotionReport: json,
+      rawResponse: json,
+      emotionReport: normalizedReport,
     );
   }
 }
@@ -358,9 +369,15 @@ class EmotionApiClient {
     );
     
     if (response.statusCode == 200) {
+      _log('StopSession', 'Raw stop_session backend response: ${response.body}');
       final data = json.decode(response.body) as Map<String, dynamic>;
+      final parsed = StopSessionResponse.fromJson(data);
       _log('StopSession', 'Session stopped successfully');
-      return StopSessionResponse.fromJson(data);
+      _log(
+        'StopSession',
+        'Parsed emotion report keys: ${parsed.emotionReport.keys.join(', ')}',
+      );
+      return parsed;
     } else {
       throw Exception('Failed to stop session: ${response.statusCode} ${response.body}');
     }

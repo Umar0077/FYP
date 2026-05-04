@@ -24,15 +24,49 @@ class _LoginScreenState extends State<LoginScreen> {
 	}
 
 	Future<void> _login() async {
-		if (!_formKey.currentState!.validate()) return;
 		final email = _emailController.text.trim();
 		final password = _passwordController.text;
 
+		final bool isEmailValid = GetUtils.isEmail(email);
+		final bool isPasswordValid = password.length >= 6;
+
+		if (!isEmailValid && !isPasswordValid) {
+			Get.snackbar(
+				'Input Error',
+				'enter correct email and password',
+				snackPosition: SnackPosition.BOTTOM,
+				backgroundColor: Colors.red,
+				colorText: Colors.white,
+			);
+			return;
+		} else if (!isEmailValid) {
+			Get.snackbar(
+				'Input Error',
+				'enter a correct email please',
+				snackPosition: SnackPosition.BOTTOM,
+				backgroundColor: Colors.red,
+				colorText: Colors.white,
+			);
+			return;
+		} else if (!isPasswordValid) {
+			Get.snackbar(
+				'Input Error',
+				'enter correct password please',
+				snackPosition: SnackPosition.BOTTOM,
+				backgroundColor: Colors.red,
+				colorText: Colors.white,
+			);
+			return;
+		}
+
+		if (!_formKey.currentState!.validate()) return;
+		
 		final authController = Get.find<AuthController>();
 		final success = await authController.login(email: email, password: password);
 		
 		if (success) {
-			Get.offAllNamed('/home');
+			final bool requiresConsent = await authController.requiresCameraConsent();
+			Get.offAllNamed(requiresConsent ? '/camera-consent' : '/home');
 		} else if (authController.errorMessage.value.isNotEmpty) {
 			Get.snackbar(
 				'Login Failed',
@@ -53,7 +87,8 @@ class _LoginScreenState extends State<LoginScreen> {
 		setState(() => _loading = false);
 		
 		if (success) {
-			Get.offAllNamed('/home');
+			final bool requiresConsent = await authController.requiresCameraConsent();
+			Get.offAllNamed(requiresConsent ? '/camera-consent' : '/home');
 		} else if (authController.errorMessage.value.isNotEmpty) {
 			Get.snackbar(
 				'Google Sign-In Failed',
@@ -109,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
 														controller: _emailController,
 														hint: 'email@example.com',
 														keyboardType: TextInputType.emailAddress,
-														validator: (String? v) => (v == null || v.isEmpty) ? 'Email is required' : null,
+														validator: (String? v) => (v == null || v.isEmpty || !GetUtils.isEmail(v)) ? 'enter a correct email please' : null,
 														fillColor: inputFillColor,
 														borderColor: inputBorderColor,
 														focusedBorderColor: inputFocusedBorderColor,
@@ -128,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
 															icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: secondaryTextColor),
 															onPressed: () => setState(() => _obscure = !_obscure),
 														),
-														validator: (String? v) => (v == null || v.length < 6) ? 'Min 6 chars' : null,
+														validator: (String? v) => (v == null || v.length < 6) ? 'enter correct password please' : null,
 														fillColor: inputFillColor,
 														borderColor: inputBorderColor,
 														focusedBorderColor: inputFocusedBorderColor,
@@ -172,14 +207,6 @@ class _LoginScreenState extends State<LoginScreen> {
 														label: 'Continue with Google',
 														assetPath: 'assets/images/google.png',
 														onPressed: _loading ? null : _signInWithGoogle,
-														borderColor: inputBorderColor,
-														textColor: primaryTextColor,
-													),
-													const SizedBox(height: 10),
-													_SocialButton(
-														label: 'Continue with Facebook',
-														assetPath: 'assets/images/facebook.png',
-														onPressed: () {},
 														borderColor: inputBorderColor,
 														textColor: primaryTextColor,
 													),

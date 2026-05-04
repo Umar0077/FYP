@@ -44,6 +44,12 @@ class AdminDataService {
       return fallback;
     }
 
+    double toPercent(dynamic value, {double fallback = 0.0}) {
+      final raw = toDouble(value, fallback: fallback);
+      final normalized = raw <= 1.0 ? raw * 100.0 : raw;
+      return normalized.clamp(0.0, 100.0);
+    }
+
     DateTime toDateTime(dynamic value) {
       if (value is Timestamp) return value.toDate();
       if (value is DateTime) return value;
@@ -65,10 +71,46 @@ class AdminDataService {
         continue;
       }
 
-      final answered = toInt(data['answeredCount']);
+      final totalCount = toInt(data['totalCount'] ?? data['questionCount']);
       final wrong = toInt(data['wrongCount']);
+      final correct = toInt(data['correctCount']);
       final skipped = toInt(data['skippedCount']);
-      final avgAccuracy = toDouble(data['avgAccuracy']);
+
+      final answeredRaw = toInt(
+        data['answeredCount'] ?? data['answeredQuestions'] ?? data['evaluatedAnsweredCount'],
+      );
+      final answered = answeredRaw > 0
+          ? answeredRaw
+          : (totalCount - skipped).clamp(0, totalCount);
+
+      final dynamic accuracyRaw = data['accuracyOverall'] ?? data['avgAccuracy'];
+      final hasAccuracyMetric = accuracyRaw != null;
+      final accuracyPercent = toPercent(accuracyRaw);
+
+      final bool hasCountMetric = answered > 0 &&
+          (data.containsKey('wrongCount') ||
+              data.containsKey('correctCount') ||
+              wrong > 0 ||
+              correct > 0);
+
+      double countBasedSuccessPercent = 0.0;
+      if (hasCountMetric) {
+        final inferredCorrect = (answered - wrong).clamp(0, answered);
+        final correctAnswers = correct > 0
+            ? correct.clamp(0, answered)
+            : inferredCorrect;
+        countBasedSuccessPercent = answered > 0
+            ? (correctAnswers / answered) * 100.0
+            : 0.0;
+      }
+
+      final double interviewSuccessPercent = hasAccuracyMetric
+          ? accuracyPercent
+          : (hasCountMetric ? countBasedSuccessPercent : 0.0);
+
+      final double interviewWeight = answered > 0
+          ? answered.toDouble()
+          : (totalCount > 0 ? totalCount.toDouble() : 1.0);
       final endedAt = toDateTime(data['endedAt']);
 
       final userStats = statsByUser.putIfAbsent(
@@ -78,6 +120,8 @@ class AdminDataService {
           'totalAnswered': 0,
           'totalWrong': 0,
           'totalSkipped': 0,
+          'successWeightedSum': 0.0,
+          'successWeight': 0.0,
           'accuracySum': 0.0,
           'lastInterviewAt': DateTime.fromMillisecondsSinceEpoch(0),
         },
@@ -87,7 +131,12 @@ class AdminDataService {
       userStats['totalAnswered'] = (userStats['totalAnswered'] as int) + answered;
       userStats['totalWrong'] = (userStats['totalWrong'] as int) + wrong;
       userStats['totalSkipped'] = (userStats['totalSkipped'] as int) + skipped;
-      userStats['accuracySum'] = (userStats['accuracySum'] as double) + avgAccuracy;
+        userStats['successWeightedSum'] =
+          (userStats['successWeightedSum'] as double) +
+            (interviewSuccessPercent * interviewWeight);
+        userStats['successWeight'] =
+          (userStats['successWeight'] as double) + interviewWeight;
+        userStats['accuracySum'] = (userStats['accuracySum'] as double) + accuracyPercent;
 
       final lastInterviewAt = userStats['lastInterviewAt'] as DateTime;
       if (endedAt.isAfter(lastInterviewAt)) {
@@ -104,6 +153,8 @@ class AdminDataService {
             'totalAnswered': 0,
             'totalWrong': 0,
             'totalSkipped': 0,
+            'successWeightedSum': 0.0,
+            'successWeight': 0.0,
             'accuracySum': 0.0,
             'lastInterviewAt': DateTime.fromMillisecondsSinceEpoch(0),
           };
@@ -112,11 +163,12 @@ class AdminDataService {
       final totalAnswered = stats['totalAnswered'] as int;
       final totalWrong = stats['totalWrong'] as int;
       final totalSkipped = stats['totalSkipped'] as int;
+      final successWeightedSum = stats['successWeightedSum'] as double;
+      final successWeight = stats['successWeight'] as double;
       final accuracySum = stats['accuracySum'] as double;
       final lastInterviewAt = stats['lastInterviewAt'] as DateTime;
 
-      final correctAnswers = (totalAnswered - totalWrong).clamp(0, totalAnswered);
-      final successRate = totalAnswered > 0 ? (correctAnswers / totalAnswered) * 100 : 0.0;
+      final successRate = successWeight > 0 ? successWeightedSum / successWeight : 0.0;
       final averageAccuracy = totalInterviews > 0 ? accuracySum / totalInterviews : 0.0;
 
       return AdminUserPerformance(

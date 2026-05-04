@@ -14,6 +14,7 @@ class AdminDashboardScreen extends StatelessWidget {
     return AppScaffold(
       showAppBar: true,
       appBarTitle: 'Admin Dashboard',
+      onBack: () => Get.offAllNamed('/admin/login'),
       body: Obx(() {
         if (controller.isLoading.value) {
           return const Center(child: CircularProgressIndicator());
@@ -148,7 +149,7 @@ class AdminDashboardScreen extends StatelessWidget {
                           ),
                           title: Text(user.name),
                           subtitle: Text(
-                            '${user.successRate.toStringAsFixed(1)}% success • ${user.totalInterviews} interviews',
+                            '${user.totalInterviews} interviews',
                           ),
                           trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                           onTap: () => Get.toNamed('/admin/users/detail', arguments: user.userId),
@@ -223,18 +224,6 @@ class AdminDashboardScreen extends StatelessWidget {
                 subtitle: 'View system health and growth',
                 icon: Icons.analytics,
                 route: '/admin/analytics',
-              ),
-              _ActionTile(
-                title: 'Resources',
-                subtitle: 'Update learning resources and tips',
-                icon: Icons.library_books,
-                route: '/admin/resources',
-              ),
-              _ActionTile(
-                title: 'Job Suggestions',
-                subtitle: 'Manage job board entries',
-                icon: Icons.work,
-                route: '/admin/jobs',
               ),
               _ActionTile(
                 title: 'Support Chats',

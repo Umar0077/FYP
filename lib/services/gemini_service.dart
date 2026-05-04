@@ -5,7 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/utils/secure_storage.dart';
 
 class GeminiService {
-  static const String _apiKey = 'AIzaSyAZT4J3ByOFJggpa-9GwvADivxQpvE5lv8';
+  static const String _apiKey = 'AIzaSyBPqumlytFcCalDClhQhJ5gAOjI3xkBWu8';
   final SecureStorage _secureStorage = SecureStorage();
 
   String _buildInterviewTypeInstruction(String interviewType, String position) {
@@ -92,7 +92,7 @@ class GeminiService {
     if (count != null && count > 0) {
       finalCount = count;
     } else if (difficulty.toLowerCase() == 'hard') {
-      finalCount = 3 + random.nextInt(3); // Random between 3-5
+      finalCount = 5 + random.nextInt(11); // Random between 5-15
     } else {
       finalCount = 3; // Default to 3 questions
     }
@@ -205,7 +205,7 @@ Question 2 text|Correct answer 2 text
     if (count != null && count > 0) {
       finalCount = count;
     } else if (difficulty.toLowerCase() == 'hard') {
-      finalCount = 3 + random.nextInt(3); // Random between 3-5 (reduced from 5-15)
+      finalCount = 5 + random.nextInt(11); // Random between 5-15
     } else {
       finalCount = 3; // Default to 3 questions
     }

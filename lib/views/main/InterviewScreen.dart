@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:nova_prep/services/gemini_service.dart';
@@ -14,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
 import 'package:camera/camera.dart';
 import '../../config/emotion_tracking_config.dart';
+import '../../core/constants/app_constants.dart';
 
 class InterviewScreen extends StatefulWidget {
 	final String difficulty;
@@ -44,12 +46,18 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 	String? _interviewId;
 	int _questionIndex = 0;
 	String _feedback = '';
-	int _timeLeft = 20;
+	int _timeLeft = AppConstants.interviewQuestionDurationSeconds;
 	Timer? _timer;
 	bool _loading = true;
 	bool _checking = false;
 	bool _isListening = false;
 	bool _speechAvailable = false;
+	String? _speechLocaleId;
+	String _speechBaseText = '';
+	String _sessionPartialTranscript = '';
+	String _sessionFinalTranscript = '';
+	String _lastPartialTranscript = '';
+	String _lastFinalTranscript = '';
 	int _answeredCount = 0;
 	int _requiredAnswerCount = 0;
 	bool _isFinishingInterview = false;
@@ -64,14 +72,16 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			final CameraController? controller = _emotionController.cameraController;
 			final canShowPreview =
 					_emotionController.isActive.value && controller != null && controller.value.isInitialized;
+			final double previewWidth = EmotionTrackingConfig.previewWidth * 0.8;
+			final double previewHeight = EmotionTrackingConfig.previewHeight * 0.8;
 
 			if (!canShowPreview) {
 				return const SizedBox.shrink();
 			}
 
 			return Container(
-				width: EmotionTrackingConfig.previewWidth,
-				height: EmotionTrackingConfig.previewHeight,
+				width: previewWidth,
+				height: previewHeight,
 				decoration: BoxDecoration(
 					color: Colors.black,
 					borderRadius: BorderRadius.circular(12),
@@ -119,24 +129,168 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 
 	Future<void> _initSpeech() async {
 		var status = await Permission.microphone.request();
-		if (status.isGranted) {
-			bool available = await _speech.initialize(
-				onStatus: (status) {
-					if (status == 'done' || status == 'notListening') {
-						if (mounted) setState(() => _isListening = false);
-					}
-				},
-				onError: (error) {
-					if (mounted) {
-						setState(() => _isListening = false);
-						ScaffoldMessenger.of(context).showSnackBar(
-							SnackBar(content: Text('Error: ${error.errorMsg}')),
-						);
-					}
-				},
-			);
-			if (mounted) setState(() => _speechAvailable = available);
+		if (!status.isGranted) {
+			developer.log('Microphone permission denied.', name: 'InterviewScreen.STT');
+			return;
 		}
+
+		bool available = await _speech.initialize(
+			onStatus: _onSpeechStatus,
+			onError: _onSpeechError,
+		);
+
+		if (!available) {
+			developer.log('Speech recognition engine unavailable.', name: 'InterviewScreen.STT');
+			if (mounted) {
+				setState(() => _speechAvailable = false);
+			}
+			return;
+		}
+
+		final locales = await _speech.locales();
+		final selectedLocale = _pickBestSpeechLocale(locales);
+
+		developer.log(
+			'Speech initialized. available=$available locale=$selectedLocale locales=${locales.length}',
+			name: 'InterviewScreen.STT',
+		);
+
+		if (mounted) {
+			setState(() {
+				_speechAvailable = available;
+				_speechLocaleId = selectedLocale;
+			});
+		}
+	}
+
+	void _onSpeechStatus(String status) {
+		developer.log('Status: $status', name: 'InterviewScreen.STT');
+		if (status == 'done' || status == 'notListening') {
+			if (mounted) {
+				setState(() => _isListening = false);
+			}
+		}
+	}
+
+	void _onSpeechError(dynamic error) {
+		final String errorMsg = (error?.errorMsg ?? 'unknown error').toString();
+		final bool isPermanent = error?.permanent == true;
+		developer.log(
+			'Error: $errorMsg, permanent=$isPermanent',
+			name: 'InterviewScreen.STT',
+			level: 900,
+		);
+		if (mounted) {
+			setState(() => _isListening = false);
+			ScaffoldMessenger.of(context).showSnackBar(
+				SnackBar(content: Text(_friendlySpeechError(errorMsg))),
+			);
+		}
+	}
+
+	String? _pickBestSpeechLocale(List<stt.LocaleName> locales) {
+		if (locales.isEmpty) return null;
+
+		for (final locale in locales) {
+			if (locale.localeId.toLowerCase() == 'en_us') return locale.localeId;
+		}
+		for (final locale in locales) {
+			if (locale.localeId.toLowerCase() == 'en_gb') return locale.localeId;
+		}
+		for (final locale in locales) {
+			if (locale.localeId.toLowerCase().startsWith('en_')) return locale.localeId;
+		}
+
+		return locales.first.localeId;
+	}
+
+	String _friendlySpeechError(String errorMsg) {
+		final msg = errorMsg.toLowerCase();
+		if (msg.contains('permission')) {
+			return 'Microphone permission is required for speech input.';
+		}
+		if (msg.contains('no match') || msg.contains('no-speech') || msg.contains('speech timeout')) {
+			return 'No clear speech detected. Please speak clearly and try again.';
+		}
+		if (msg.contains('busy') || msg.contains('recognizer busy')) {
+			return 'Speech engine is busy. Please wait a moment and retry.';
+		}
+		if (msg.contains('network')) {
+			return 'Speech recognition network issue. Please check connection and retry.';
+		}
+		if (msg.contains('not available') || msg.contains('unavailable')) {
+			return 'Speech recognition is unavailable on this device.';
+		}
+		return 'Speech recognition failed: $errorMsg';
+	}
+
+	void _resetSpeechSession() {
+		_sessionPartialTranscript = '';
+		_sessionFinalTranscript = '';
+		_lastPartialTranscript = '';
+		_lastFinalTranscript = '';
+	}
+
+	String _normalizeTranscript(String value) {
+		return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+	}
+
+	String _composeAnswerWithTranscript(String baseText, String transcript) {
+		final normalizedBase = _normalizeTranscript(baseText);
+		final normalizedTranscript = _normalizeTranscript(transcript);
+		if (normalizedBase.isEmpty) return normalizedTranscript;
+		if (normalizedTranscript.isEmpty) return normalizedBase;
+		if (normalizedBase.endsWith('.') || normalizedBase.endsWith('!') || normalizedBase.endsWith('?')) {
+			return '$normalizedBase $normalizedTranscript';
+		}
+		return '$normalizedBase. $normalizedTranscript';
+	}
+
+	void _applySpeechTextToAnswer() {
+		final transcript = _sessionPartialTranscript.isNotEmpty
+				? _sessionPartialTranscript
+				: _sessionFinalTranscript;
+		final composed = _composeAnswerWithTranscript(_speechBaseText, transcript);
+		if (_answerController.text == composed) {
+			return;
+		}
+		_answerController.value = _answerController.value.copyWith(
+			text: composed,
+			selection: TextSelection.collapsed(offset: composed.length),
+			composing: TextRange.empty,
+		);
+	}
+
+	void _onSpeechResult(dynamic result) {
+		final recognized = _normalizeTranscript((result?.recognizedWords ?? '').toString());
+		final bool isFinalResult = result?.finalResult == true;
+		if (recognized.isEmpty) return;
+
+		if (isFinalResult) {
+			if (recognized == _lastFinalTranscript) {
+				return;
+			}
+			_lastFinalTranscript = recognized;
+			_sessionFinalTranscript = recognized;
+			_sessionPartialTranscript = '';
+			developer.log('Final: ${_truncate(recognized)}', name: 'InterviewScreen.STT');
+		} else {
+			if (recognized == _lastPartialTranscript) {
+				return;
+			}
+			_lastPartialTranscript = recognized;
+			_sessionPartialTranscript = recognized;
+			developer.log('Partial: ${_truncate(recognized)}', name: 'InterviewScreen.STT');
+		}
+
+		if (mounted) {
+			setState(_applySpeechTextToAnswer);
+		}
+	}
+
+	String _truncate(String value, {int maxLength = 100}) {
+		if (value.length <= maxLength) return value;
+		return '${value.substring(0, maxLength)}...';
 	}
 
 	@override
@@ -187,33 +341,65 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		}
 
 		if (_isListening) {
-			await _speech.stop();
-			if (mounted) setState(() => _isListening = false);
+			await _stopListening(userInitiated: true);
 		} else {
-			if (mounted) setState(() => _isListening = true);
-			await _speech.listen(
-				onResult: (result) {
-					if (mounted) {
-						setState(() {
-							_answerController.text = result.recognizedWords;
-						});
-					}
-				},
-				listenFor: const Duration(seconds: 30),
-				pauseFor: const Duration(seconds: 5),
-				listenOptions: stt.SpeechListenOptions(
-					partialResults: true,
-					cancelOnError: true,
-				),
+			await _startListening();
+		}
+	}
+
+	Future<void> _startListening() async {
+		if (_isListening) return;
+
+		_speechBaseText = _answerController.text.trim();
+		_resetSpeechSession();
+
+		if (mounted) {
+			setState(() => _isListening = true);
+		}
+
+		developer.log(
+			'Start listening locale=${_speechLocaleId ?? 'default'} '
+			'listenFor=${AppConstants.interviewSpeechListenForSeconds}s '
+			'pauseFor=${AppConstants.interviewSpeechPauseForSeconds}s',
+			name: 'InterviewScreen.STT',
+		);
+
+		final started = await _speech.listen(
+			onResult: _onSpeechResult,
+			localeId: _speechLocaleId,
+			listenFor: const Duration(seconds: AppConstants.interviewSpeechListenForSeconds),
+			pauseFor: const Duration(seconds: AppConstants.interviewSpeechPauseForSeconds),
+			listenOptions: stt.SpeechListenOptions(
+				partialResults: true,
+				cancelOnError: false,
+				listenMode: stt.ListenMode.confirmation,
+			),
+		);
+
+		if (!started && mounted) {
+			setState(() => _isListening = false);
+			ScaffoldMessenger.of(context).showSnackBar(
+				const SnackBar(content: Text('Could not start speech recognition. Please retry.')),
 			);
 		}
 	}
 
+	Future<void> _stopListening({bool userInitiated = false}) async {
+		if (!_isListening) return;
+		await _speech.stop();
+		if (mounted) {
+			setState(() => _isListening = false);
+		}
+		developer.log(
+			'Stop listening (${userInitiated ? 'user' : 'system'}) final="${_truncate(_sessionFinalTranscript)}"',
+			name: 'InterviewScreen.STT',
+		);
+	}
+
 	Future<void> _loadQuestions() async {
 		try {
-			final int requestedCount = (widget.count != null && widget.count! > 0)
-					? widget.count!
-					: 3;
+			final int? requestedCount =
+					(widget.count != null && widget.count! > 0) ? widget.count! : null;
 
 			final result = await _gemini.generateQuestionsWithAnswers(
 				difficulty: widget.difficulty,
@@ -229,7 +415,7 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				setState(() {
 					_questions = qs;
 					_correctAnswers = correctAnswers;
-					_requiredAnswerCount = requestedCount > 0 ? requestedCount : qs.length;
+					_requiredAnswerCount = qs.length;
 				});
 
 				_interviewId = await InterviewService.createInterviewSession(
@@ -299,7 +485,7 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 
 	void _startTimer() {
 		_timer?.cancel();
-		_timeLeft = 20;
+		_timeLeft = AppConstants.interviewQuestionDurationSeconds;
 		_timer = Timer.periodic(const Duration(seconds: 1), (t) {
 			if (_timeLeft <= 1) {
 				t.cancel();
@@ -315,6 +501,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		setState(() => _checking = true);
 
 		_timer?.cancel();
+		await _stopListening();
+		if (!mounted) return;
 		final currentQuestion = _questions[_questionIndex];
 		final userAnswer = forceSkip ? '' : _answerController.text.trim();
 
@@ -390,6 +578,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			setState(() {
 				_questionIndex++;
 				_answerController.clear();
+				_speechBaseText = '';
+				_resetSpeechSession();
 				_feedback = '';
 				_checking = false;
 			});
@@ -412,6 +602,11 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			await _emotionController.stopTracking();
 			final rawEmotionReport = _emotionController.getEmotionReport();
 			final emotionReport = rawEmotionReport ?? <String, dynamic>{};
+
+			developer.log(
+				'Raw stop session backend response parsed emotion report: ${_safeJson(emotionReport)}',
+				name: 'InterviewScreen',
+			);
 
 			if (_interviewId != null && !_hasSavedFinalResult) {
 				final completionResult = await InterviewService.completeInterview(_interviewId!);
@@ -459,7 +654,13 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 							Navigator.of(context).pop();
 							Navigator.of(context).pushReplacement(
 								MaterialPageRoute(
-									builder: (_) => InterviewResultScreen(interviewId: _interviewId),
+										builder: (_) => InterviewResultScreen(
+											interviewId: _interviewId,
+											difficulty: widget.difficulty,
+											questionCount: _requiredAnswerCount > 0 ? _requiredAnswerCount : widget.count,
+											position: widget.position,
+											interviewType: widget.interviewType,
+										),
 								),
 							);
 						},
@@ -504,6 +705,13 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				(answeredCount - wrongCount).clamp(0, answeredCount);
 		final int skippedCount = (completionResult['skippedCount'] as num?)?.toInt() ??
 				(totalCount - answeredCount).clamp(0, totalCount);
+
+			developer.log(
+				'Final Firestore payload before write: interviewId=$interviewId, total=$totalCount, answered=$answeredCount, '
+				'wrong=$wrongCount, correct=$correctCount, skipped=$skippedCount, '
+				'confidence=${_safeJson(confidenceResult)}, emotionReportKeys=${emotionReport.keys.toList()}',
+				name: 'InterviewScreen',
+			);
 
 		await InterviewResultService.saveInterviewResultToFirestore(
 			interviewId: interviewId,
@@ -563,6 +771,19 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				'completion_rate': requiredQuestions == 0 ? 0.0 : answeredQuestions / requiredQuestions,
 			};
 
+			developer.log(
+				'Input passed to confidence analyzer (summary): $summary',
+				name: 'InterviewScreen',
+			);
+			developer.log(
+				'Input passed to confidence analyzer (nlpScores): ${_safeJson(nlpScores)}',
+				name: 'InterviewScreen',
+			);
+			developer.log(
+				'Input passed to confidence analyzer (emotionReport): ${_safeJson(emotionReport)}',
+				name: 'InterviewScreen',
+			);
+
 			final confidenceResult = await _confidenceAnalyzer.analyzeConfidence(
 				interviewSummary: summary,
 				nlpScores: nlpScores,
@@ -570,6 +791,19 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 			);
 
 			if (confidenceResult != null) {
+				developer.log(
+					'Output returned by confidence analyzer: ${_safeJson(confidenceResult)}',
+					name: 'InterviewScreen',
+				);
+
+				if (confidenceResult['fallback_used'] == true) {
+					developer.log(
+						'Confidence fallback used. Reason: ${confidenceResult['fallback_reason'] ?? 'unknown'}',
+						name: 'InterviewScreen',
+						level: 900,
+					);
+				}
+
 				developer.log(
 					'Confidence analysis ready: ${confidenceResult['confidence_label']}',
 					name: 'InterviewScreen',
@@ -581,6 +815,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				'confidence_level': 0.0,
 				'confidence_label': 'low',
 				'reasoning': 'Confidence analysis unavailable',
+				'fallback_used': true,
+				'fallback_reason': 'Analyzer returned null result',
 			};
 		} catch (e) {
 			developer.log('Error analyzing confidence: $e', name: 'InterviewScreen', error: e);
@@ -588,7 +824,17 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 				'confidence_level': 0.0,
 				'confidence_label': 'low',
 				'reasoning': 'Confidence analysis failed safely',
+				'fallback_used': true,
+				'fallback_reason': 'Confidence analyzer exception: $e',
 			};
+		}
+	}
+
+	String _safeJson(Object? value) {
+		try {
+			return jsonEncode(value);
+		} catch (_) {
+			return value.toString();
 		}
 	}
 
@@ -607,6 +853,8 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 		final Color nextBtnBg = isDark ? Colors.white : const Color(0xFF00002E);
 		final Color nextBtnFg = isDark ? const Color(0xFF00002E) : Colors.white;
 		final Color backBtnFg = isDark ? Colors.white : const Color(0xFF00002E);
+		final double timerProgress =
+				_timeLeft / AppConstants.interviewQuestionDurationSeconds;
 
 		return AppScaffold(
 			appBarTitle: 'Flutter Interview',
@@ -673,22 +921,36 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 														}
 														return const SizedBox.shrink();
 													}),
-													Row(
-														mainAxisAlignment: MainAxisAlignment.end,
-														children: [Text('$_timeLeft s', style: TextStyle(color: labelColor))],
-													),
-													Row(
-														mainAxisAlignment: MainAxisAlignment.spaceBetween,
-														children: [
-															Container(
-																padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-																decoration: BoxDecoration(color: chipColor, borderRadius: BorderRadius.circular(14)),
-																child: Text('Question ${_questionIndex + 1}', style: TextStyle(color: textColor, fontSize: 12)),
+														Container(
+															padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+															decoration: BoxDecoration(color: chipColor, borderRadius: BorderRadius.circular(14)),
+															child: Text('Question ${_questionIndex + 1}', style: TextStyle(color: textColor, fontSize: 12)),
+														),
+														const SizedBox(height: 8),
+														Wrap(
+															spacing: 14,
+															runSpacing: 4,
+															children: [
+																Text('Time: ${_timeLeft}s / ${AppConstants.interviewQuestionDurationSeconds}s', style: TextStyle(color: labelColor)),
+																Text('Answered $_answeredCount/${_requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length}', style: TextStyle(color: labelColor)),
+															],
+														),
+														const SizedBox(height: 8),
+														ClipRRect(
+															borderRadius: BorderRadius.circular(8),
+															child: LinearProgressIndicator(
+																value: timerProgress.clamp(0.0, 1.0),
+																minHeight: 6,
+																color: _timeLeft <= 10 ? Colors.redAccent : (isDark ? Colors.white : const Color(0xFF00002E)),
+																backgroundColor: isDark ? const Color(0xFF27308A) : const Color(0xFFD6DBFF),
 															),
-															Text('Answered $_answeredCount/${_requiredAnswerCount > 0 ? _requiredAnswerCount : _questions.length}', style: TextStyle(color: labelColor)),
-														],
-													),
-													const SizedBox(height: 16),
+														),
+														const SizedBox(height: 10),
+														Align(
+															alignment: Alignment.centerRight,
+															child: _buildEmotionPreview(),
+														),
+														const SizedBox(height: 12),
 													Container(
 														width: double.infinity,
 														height: 160,
@@ -761,7 +1023,10 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 														Center(
 															child: Padding(
 																padding: const EdgeInsets.only(top: 8),
-																child: const Text('Listening... Tap to stop', style: TextStyle(color: Colors.red, fontSize: 12)),
+																child: Text(
+																	'Listening (${_speechLocaleId ?? 'default'})... Tap to stop',
+																	style: const TextStyle(color: Colors.red, fontSize: 12),
+																),
 															),
 														),
 													const SizedBox(height: 24),
@@ -805,15 +1070,6 @@ class _InterviewScreenState extends State<InterviewScreen> with WidgetsBindingOb
 											),
 										),
 									),
-								),
-							),
-						if (EmotionTrackingConfig.showCameraPreview)
-							Positioned(
-								top: 8,
-								right: 12,
-								child: IgnorePointer(
-									ignoring: true,
-									child: _buildEmotionPreview(),
 								),
 							),
 					],

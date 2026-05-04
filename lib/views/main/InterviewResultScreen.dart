@@ -2,11 +2,24 @@ import 'package:flutter/material.dart';
 import '../widgets/GlassCard.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'InterviewScreen.dart';
 
 class InterviewResultScreen extends StatefulWidget {
 	final String? interviewId;
-	const InterviewResultScreen({super.key, this.interviewId});
+	final String? difficulty;
+	final int? questionCount;
+	final String? position;
+	final String? interviewType;
+	const InterviewResultScreen({
+		super.key,
+		this.interviewId,
+		this.difficulty,
+		this.questionCount,
+		this.position,
+		this.interviewType,
+	});
 
 	@override
 	State<InterviewResultScreen> createState() => _InterviewResultScreenState();
@@ -22,11 +35,65 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 	int _totalCount = 0;
 	int _wrongCount = 0;
 	Map<String, dynamic>? _confidenceAnalysis;
+	String? _restartDifficulty;
+	int? _restartQuestionCount;
+	String? _restartPosition;
+	String? _restartInterviewType;
 
 	@override
 	void initState() {
 		super.initState();
+		_restartDifficulty = widget.difficulty;
+		_restartQuestionCount = widget.questionCount;
+		_restartPosition = widget.position;
+		_restartInterviewType = widget.interviewType;
 		_loadResults();
+	}
+
+	void _hydrateRestartConfig(Map<String, dynamic> data) {
+		final String? fetchedDifficulty = (data['difficulty'] ?? data['level'])?.toString().trim();
+		final String? fetchedPosition = (data['position'] ?? data['domain'])?.toString().trim();
+		final String? fetchedInterviewType = data['interviewType']?.toString().trim();
+		final int fetchedQuestionCount = _asInt(
+			data['questionCount'] ?? data['totalQuestions'] ?? data['totalCount'],
+		);
+
+		_restartDifficulty = (widget.difficulty?.trim().isNotEmpty ?? false)
+				? widget.difficulty!.trim()
+				: ((fetchedDifficulty?.isNotEmpty ?? false) ? fetchedDifficulty : _restartDifficulty);
+
+		_restartPosition = (widget.position?.trim().isNotEmpty ?? false)
+				? widget.position!.trim()
+				: ((fetchedPosition?.isNotEmpty ?? false) ? fetchedPosition : _restartPosition);
+
+		_restartInterviewType = (widget.interviewType?.trim().isNotEmpty ?? false)
+				? widget.interviewType!.trim()
+				: ((fetchedInterviewType?.isNotEmpty ?? false)
+						? fetchedInterviewType
+						: _restartInterviewType);
+
+		if ((widget.questionCount ?? 0) > 0) {
+			_restartQuestionCount = widget.questionCount;
+		} else if (fetchedQuestionCount > 0) {
+			_restartQuestionCount = fetchedQuestionCount;
+		}
+	}
+
+	void _restartInterview() {
+		final String difficulty = (_restartDifficulty?.trim().isNotEmpty ?? false)
+				? _restartDifficulty!.trim()
+				: 'Easy';
+
+		Navigator.of(context).pushReplacement(
+			MaterialPageRoute(
+				builder: (_) => InterviewScreen(
+					difficulty: difficulty,
+					count: (_restartQuestionCount ?? 0) > 0 ? _restartQuestionCount : null,
+					position: _restartPosition,
+					interviewType: _restartInterviewType,
+				),
+			),
+		);
 	}
 
 	Future<void> _loadResults({int retryAttempt = 0}) async {
@@ -101,6 +168,13 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 				return;
 			}
 
+			developer.log(
+				'Data read by result screen (merged): ${_safeJson(mergedData)}',
+				name: 'InterviewResultScreen',
+			);
+
+			_hydrateRestartConfig(mergedData);
+
 			if (!_hasUsableAggregateFields(mergedData)) {
 				if (retryAttempt < 5) {
 					developer.log(
@@ -163,6 +237,11 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 			_loading = false;
 			_waitingForBackendAggregate = false;
 		});
+
+		developer.log(
+			'Result screen confidence map selected: ${_safeJson(confidenceMap)}',
+			name: 'InterviewResultScreen',
+		);
 	}
 
 	bool _hasUsableAggregateFields(Map<String, dynamic> data) {
@@ -177,12 +256,42 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 	}
 
 	Map<String, dynamic>? _normalizeConfidenceMap(Map<String, dynamic> data) {
-		if (data['confidenceAnalysis'] is Map<String, dynamic>) {
-			final confidence = Map<String, dynamic>.from(data['confidenceAnalysis'] as Map<String, dynamic>);
-			final level = _asDouble(confidence['confidence_level'] ?? confidence['confidenceLevel']);
-			confidence['confidence_level'] = level <= 1.0 ? level * 100 : level;
-			confidence['confidence_label'] = (confidence['confidence_label'] ?? confidence['confidenceLabel'] ?? 'unknown').toString();
-			return confidence;
+		if (data['confidenceAnalysis'] is Map) {
+			final rawConfidence = data['confidenceAnalysis'] as Map;
+			final confidence = rawConfidence.map((k, v) => MapEntry(k.toString(), v));
+
+			double level = _asDouble(
+				confidence['confidence_level'] ?? confidence['confidenceLevel'] ?? data['confidenceLevel'],
+			);
+			if (level <= 1.0) {
+				level = level * 100;
+			}
+
+			final label = _normalizeConfidenceLabel(
+				confidence['confidence_label'] ?? confidence['confidenceLabel'] ?? data['confidenceLabel'],
+				level,
+			);
+
+			final reasoning = (confidence['reasoning'] ?? data['confidenceAnalysisSummary'] ?? '').toString();
+			final observations = _asStringList(
+				confidence['emotion_based_observations'] ?? data['emotion_based_observations'],
+			);
+			final coachingTips = _asStringList(
+				confidence['coaching_tips'] ?? data['coaching_tips'],
+			);
+			final emotionSummaryUsed = _asMap(
+				confidence['emotion_summary_used'] ?? data['emotion_summary_used'],
+			);
+
+			return {
+				...confidence,
+				'confidence_level': level.clamp(0.0, 100.0),
+				'confidence_label': label,
+				'reasoning': reasoning,
+				'emotion_based_observations': observations,
+				'coaching_tips': coachingTips,
+				if (emotionSummaryUsed != null) 'emotion_summary_used': emotionSummaryUsed,
+			};
 		}
 
 		if (data['confidenceLevel'] != null || data['confidenceLabel'] != null || data['confidenceAnalysisSummary'] != null) {
@@ -193,12 +302,60 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 
 			return {
 				'confidence_level': level,
-				'confidence_label': (data['confidenceLabel'] ?? 'unknown').toString(),
+				'confidence_label': _normalizeConfidenceLabel(data['confidenceLabel'], level),
 				'reasoning': (data['confidenceAnalysisSummary'] ?? '').toString(),
+				'emotion_based_observations': _asStringList(data['emotion_based_observations']),
+				'coaching_tips': _asStringList(data['coaching_tips']),
+				if (_asMap(data['emotion_summary_used']) != null)
+					'emotion_summary_used': _asMap(data['emotion_summary_used']),
 			};
 		}
 
 		return null;
+	}
+
+	String _normalizeConfidenceLabel(dynamic rawLabel, double level) {
+		final normalized = rawLabel?.toString().trim().toLowerCase() ?? '';
+		if (normalized == 'moderate') {
+			return 'medium';
+		}
+		if (normalized == 'low' || normalized == 'medium' || normalized == 'high') {
+			return normalized;
+		}
+
+		if (level >= 71.0) {
+			return 'high';
+		}
+		if (level >= 41.0) {
+			return 'medium';
+		}
+		return 'low';
+	}
+
+	Map<String, dynamic>? _asMap(dynamic value) {
+		if (value is Map<String, dynamic>) return value;
+		if (value is Map) {
+			return value.map((key, val) => MapEntry(key.toString(), val));
+		}
+		return null;
+	}
+
+	List<String> _asStringList(dynamic value) {
+		if (value is List) {
+			return value
+					.map((item) => item.toString().trim())
+					.where((item) => item.isNotEmpty)
+					.toList();
+		}
+		return const <String>[];
+	}
+
+	String _safeJson(Object? value) {
+		try {
+			return jsonEncode(value);
+		} catch (_) {
+			return value.toString();
+		}
 	}
 
 	double _asDouble(dynamic value) {
@@ -360,7 +517,7 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 																foregroundColor: isDark ? Colors.white : const Color(0xFF0A0F2E),
 																padding: const EdgeInsets.symmetric(vertical: 14),
 															),
-															onPressed: () => Navigator.of(context).pushReplacementNamed('/interview'),
+															onPressed: _restartInterview,
 															child: const Text('Restart Interview'),
 														),
 													),

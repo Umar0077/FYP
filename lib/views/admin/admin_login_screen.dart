@@ -97,7 +97,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     children: [
                       IconButton(
                         icon: Icon(Icons.arrow_back, color: primaryTextColor),
-                        onPressed: Get.back,
+                        onPressed: () => Get.offAllNamed('/login'),
                         padding: EdgeInsets.zero,
                         alignment: Alignment.centerLeft,
                       ),

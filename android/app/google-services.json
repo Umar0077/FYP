@@ -12,7 +12,20 @@
           "package_name": "com.example.nova_prep"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "140641716848-649pq8j3o5f531pkaajq3pq37d24qame.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.nova_prep",
+            "certificate_hash": "86ed28e602d9d22c4cd5455422a10e0a278cb901"
+          }
+        },
+        {
+          "client_id": "140641716848-fbjq6ncpdfif6jo0ggfbk69ttpudunt8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAJfmKZxqSce9NyhPNQxvmnYVfJ0fDjZgY"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "140641716848-fbjq6ncpdfif6jo0ggfbk69ttpudunt8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "140641716848-8dh9h3pithm493l1rnk3rovn7cg06a8r.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.project"
+              }
+            }
+          ]
         }
       }
     },
@@ -31,7 +56,12 @@
           "package_name": "com.example.project"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "140641716848-fbjq6ncpdfif6jo0ggfbk69ttpudunt8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAJfmKZxqSce9NyhPNQxvmnYVfJ0fDjZgY"
@@ -39,7 +69,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "140641716848-fbjq6ncpdfif6jo0ggfbk69ttpudunt8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "140641716848-8dh9h3pithm493l1rnk3rovn7cg06a8r.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.project"
+              }
+            }
+          ]
         }
       }
     }

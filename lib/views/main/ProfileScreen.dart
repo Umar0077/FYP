@@ -22,6 +22,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   double _progress = 0.0;
   final ProfileController _profileController = ProfileController();
 
+  String _uploadErrorMessage(Object e) {
+    final String raw = e.toString();
+    if (raw.contains('upload-failed') || raw.contains('object-not-found')) {
+      return 'Upload failed due to Firebase Storage configuration. Please verify the Storage bucket in Firebase project settings.';
+    }
+    if (raw.contains('unauthorized')) {
+      return 'Upload failed due to missing permissions for this account.';
+    }
+    return 'Upload failed: $e';
+  }
+
   Future<void> _pickAndUpload() async {
     try {
       final XFile? picked = await _picker.pickImage(
@@ -45,12 +56,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile photo uploaded')));
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_uploadErrorMessage(e))));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_uploadErrorMessage(e))));
       }
     } finally {
       if (mounted)
@@ -93,7 +104,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     if (data != null) {
                       if (data['name'] is String && (data['name'] as String).isNotEmpty) displayName = data['name'] as String;
                       if (data['email'] is String && (data['email'] as String).isNotEmpty) displayEmail = data['email'] as String;
-                      if (data['photoUrl'] is String && (data['photoUrl'] as String).isNotEmpty) photoUrl = data['photoUrl'] as String;
+                      if (data['photoUrl'] is String && (data['photoUrl'] as String).isNotEmpty) {
+                        photoUrl = data['photoUrl'] as String;
+                      } else if (data['photoURL'] is String && (data['photoURL'] as String).isNotEmpty) {
+                        photoUrl = data['photoURL'] as String;
+                      }
                       if (data['bio'] is String && (data['bio'] as String).isNotEmpty) bio = data['bio'] as String;
                     }
                   } else {
@@ -102,6 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     if (authUser != null) {
                       if (authUser.displayName != null && authUser.displayName!.isNotEmpty) displayName = authUser.displayName!;
                       if (authUser.email != null && authUser.email!.isNotEmpty) displayEmail = authUser.email!;
+                      if (authUser.photoURL != null && authUser.photoURL!.isNotEmpty) photoUrl = authUser.photoURL;
                     }
                   }
                   return Column(
@@ -150,14 +166,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(displayName, style: TextStyle(color: nameColor, fontSize: 18, fontWeight: FontWeight.w700)),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: Icon(Icons.edit, color: nameColor, size: 18),
-                            tooltip: 'Edit Profile',
-                            onPressed: () {
-                              Navigator.of(context).pushNamed('/edit_information');
-                            },
-                          ),
                         ],
                       ),
                       const SizedBox(height: 4),

@@ -7,6 +7,7 @@ import 'views/starting/OnboardingScreen.dart';
 import 'views/starting/WelcomeScreen.dart';
 import 'views/auth/LoginScreen.dart';
 import 'views/auth/RegisterScreen.dart';
+import 'views/auth/CameraConsentScreen.dart';
 import 'views/auth/ForgotPasswordMethodScreen.dart';
 import 'views/auth/ForgotPasswordEmailScreen.dart';
 import 'views/main/InterviewPrepScreen.dart';
@@ -30,8 +31,6 @@ import 'views/admin/admin_interview_management_screen.dart';
 import 'views/admin/admin_interview_detail_screen.dart';
 import 'views/admin/admin_results_review_screen.dart';
 import 'views/admin/admin_emotion_tracking_screen.dart';
-import 'views/admin/admin_resources_management_screen.dart';
-import 'views/admin/admin_job_suggestions_management_screen.dart';
 import 'views/admin/admin_support_screen.dart';
 import 'views/admin/admin_support_chat_detail_screen.dart';
 import 'views/admin/admin_analytics_screen.dart';
@@ -87,6 +86,10 @@ class _MyAppState extends State<MyApp> {
             GetPage(name: '/welcome', page: () => const WelcomeScreen()),
             GetPage(name: '/login', page: () => const LoginScreen()),
             GetPage(name: '/register', page: () => const RegisterScreen()),
+            GetPage(
+              name: '/camera-consent',
+              page: () => const CameraConsentScreen(),
+            ),
             GetPage(
               name: '/forgot',
               page: () => const ForgotPasswordMethodScreen(),
@@ -196,18 +199,6 @@ class _MyAppState extends State<MyApp> {
             GetPage(
               name: '/admin/emotion_tracking',
               page: () => const AdminEmotionTrackingScreen(),
-              binding: AdminBinding(),
-              middlewares: [AdminRouteGuard()],
-            ),
-            GetPage(
-              name: '/admin/resources',
-              page: () => const AdminResourcesManagementScreen(),
-              binding: AdminBinding(),
-              middlewares: [AdminRouteGuard()],
-            ),
-            GetPage(
-              name: '/admin/jobs',
-              page: () => const AdminJobSuggestionsManagementScreen(),
               binding: AdminBinding(),
               middlewares: [AdminRouteGuard()],
             ),

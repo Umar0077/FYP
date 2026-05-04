@@ -78,16 +78,6 @@ class HomeScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      // Avatar with subtle shadow
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(isDark ? 0.35 : 0.08), blurRadius: 8, offset: const Offset(0, 4)),
-                          ],
-                        ),
-                        child: CircleAvatar(radius: 28, backgroundColor: glassBg, child: const Icon(Icons.person, color: Colors.white, size: 22)),
-                      ),
                     ],
                   ),
 
@@ -193,48 +183,44 @@ class HomeScreen extends StatelessWidget {
                       final currentStreak = streakData.currentStreak;
                       final milestone = 7; // 7-day milestone
                       final progress = (currentStreak % milestone) / milestone;
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => Get.toNamed('/streaks'),
-                        child: GlassCard(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Center(
-                                      child: Text('${currentStreak}-Day Practice Streak',
-                                          style: TextStyle(color: primaryTextColor, fontSize: 16, fontWeight: FontWeight.w800)),
+                      return GlassCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Center(
+                                    child: Text('${currentStreak}-Day Practice Streak',
+                                        style: TextStyle(color: primaryTextColor, fontSize: 16, fontWeight: FontWeight.w800)),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Center(child: Text(currentStreak == 0 ? 'Start your streak today!' : 'Keep your streak alive!', 
+                                                    style: TextStyle(color: secondaryTextColor, fontSize: 13))),
+                                  const SizedBox(height: 10),
+                                  // Progress bar toward milestone
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: LinearProgressIndicator(
+                                      value: progress,
+                                      minHeight: 8,
+                                      valueColor: AlwaysStoppedAnimation<Color>(isDark ? const Color(0xFF3A45C3) : const Color(0xFF2D3DF0)),
+                                      backgroundColor: isDark ? Colors.white12 : Colors.black12,
                                     ),
-                                    const SizedBox(height: 6),
-                                    Center(child: Text(currentStreak == 0 ? 'Start your streak today!' : 'Keep your streak alive!', 
-                                                      style: TextStyle(color: secondaryTextColor, fontSize: 13))),
-                                    const SizedBox(height: 10),
-                                    // Progress bar toward milestone
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: LinearProgressIndicator(
-                                        value: progress,
-                                        minHeight: 8,
-                                        valueColor: AlwaysStoppedAnimation<Color>(isDark ? const Color(0xFF3A45C3) : const Color(0xFF2D3DF0)),
-                                        backgroundColor: isDark ? Colors.white12 : Colors.black12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 12),
-                              // Flame icon on the right
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(color: isDark ? const Color(0xFF3A45C3) : const Color(0xFF2D3DF0), borderRadius: BorderRadius.circular(12)),
-                                child: const Center(child: Icon(Icons.local_fire_department, color: Colors.white, size: 22)),
-                              ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Flame icon on the right
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(color: isDark ? const Color(0xFF3A45C3) : const Color(0xFF2D3DF0), borderRadius: BorderRadius.circular(12)),
+                              child: const Center(child: Icon(Icons.local_fire_department, color: Colors.white, size: 22)),
+                            ),
+                          ],
                         ),
                       );
                     },

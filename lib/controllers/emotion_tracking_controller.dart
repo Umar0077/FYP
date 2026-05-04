@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:developer' as developer;
 import 'package:get/get.dart';
@@ -360,13 +361,35 @@ class EmotionTrackingController extends GetxController {
         _stopSessionCalled = true;
         _log('Stop', 'Calling stop_session for session=$activeSessionId');
         final response = await _apiClient.stopSession(activeSessionId);
-        emotionReport.value = response.emotionReport;
+        _log('Stop', 'Raw stop_session backend response: ${_safeJson(response.rawResponse)}');
+
+        final parsedReport = Map<String, dynamic>.from(response.emotionReport);
+        emotionReport.value = parsedReport;
 
         _log('Stop', 'Emotion report received');
-        if (response.emotionReport.containsKey('total_frames_processed')) {
-          _log('Stop', 'Total frames processed: ${response.emotionReport['total_frames_processed']}');
+        _log('Stop', 'Parsed emotion report object: ${_safeJson(parsedReport)}');
+        if (parsedReport.containsKey('total_frames_processed')) {
+          _log('Stop', 'Total frames processed: ${parsedReport['total_frames_processed']}');
         }
-        _log('Stop', 'Report keys: ${response.emotionReport.keys.join(', ')}');
+        if (parsedReport.containsKey('saved_frames')) {
+          _log('Stop', 'Saved frames: ${parsedReport['saved_frames']}');
+        }
+        if (parsedReport.containsKey('duration_seconds')) {
+          _log('Stop', 'Duration seconds: ${parsedReport['duration_seconds']}');
+        }
+        _log('Stop', 'Report keys: ${parsedReport.keys.join(', ')}');
+
+        final validation = _validateEmotionReport(parsedReport);
+        if (!(validation['isValid'] as bool)) {
+          _log(
+            'Stop',
+            'Emotion report validation warning: ${validation['reason']}',
+            level: 900,
+          );
+        } else {
+          _log('Stop', 'Emotion report validation passed');
+        }
+
         _log('Stop', 'Local successful uploads=$_successfulUploads');
       }
 
@@ -409,7 +432,11 @@ class EmotionTrackingController extends GetxController {
 
   /// Get latest emotion report
   Map<String, dynamic>? getEmotionReport() {
-    return emotionReport.value;
+    final report = emotionReport.value;
+    if (report == null) {
+      return null;
+    }
+    return Map<String, dynamic>.from(report);
   }
 
   /// Parse emotion summary from report
@@ -432,6 +459,55 @@ class EmotionTrackingController extends GetxController {
     } catch (e) {
       _log('Summary', 'Failed to parse emotion summary: $e', error: e, level: 900);
       return null;
+    }
+  }
+
+  Map<String, dynamic> _validateEmotionReport(Map<String, dynamic> report) {
+    final reasons = <String>[];
+
+    final countsRaw = report['emotion_counts'];
+    final hasCounts = countsRaw is Map && countsRaw.isNotEmpty;
+    if (!hasCounts) {
+      reasons.add('emotion_counts missing/empty');
+    }
+
+    final avgRaw = report['average_confidence'];
+    final avgParsed = avgRaw is num ? avgRaw.toDouble() : double.tryParse(avgRaw?.toString() ?? '');
+    if (avgParsed == null || avgParsed <= 0) {
+      reasons.add('average_confidence missing/invalid');
+    }
+
+    final dominant = report['dominant_emotion']?.toString().trim() ?? '';
+    final summary = report['summary'];
+    final summaryDominant = summary is Map ? summary['dominant_emotions'] : null;
+    final hasDominant = dominant.isNotEmpty || (summaryDominant is List && summaryDominant.isNotEmpty);
+    if (!hasDominant) {
+      reasons.add('dominant emotion could not be derived');
+    }
+
+    final durationRaw = report['duration_seconds'] ?? (summary is Map ? summary['total_duration_seconds'] : null);
+    final duration = durationRaw is num ? durationRaw.toDouble() : double.tryParse(durationRaw?.toString() ?? '');
+    if (duration == null || duration <= 0) {
+      reasons.add('duration missing/invalid');
+    }
+
+    final savedFramesRaw = report['saved_frames'] ?? report['total_frames_processed'] ?? (summary is Map ? summary['total_frames_processed'] : null);
+    final savedFrames = savedFramesRaw is num ? savedFramesRaw.toInt() : int.tryParse(savedFramesRaw?.toString() ?? '');
+    if (savedFrames == null || savedFrames <= 0) {
+      reasons.add('saved frames missing/invalid');
+    }
+
+    return {
+      'isValid': reasons.isEmpty,
+      'reason': reasons.join('; '),
+    };
+  }
+
+  String _safeJson(Object? value) {
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
     }
   }
 }

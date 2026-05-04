@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 class NLPEvaluationService {
-  static const String _apiKey = 'AIzaSyCNVnh58aP_b1fUvxOp6q5R8tf_w30YpUI';
+  static const String _apiKey = 'AIzaSyBPqumlytFcCalDClhQhJ5gAOjI3xkBWu8';
   
   // Preferred model with fallback chain
   static const List<String> _modelPriority = [
