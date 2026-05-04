@@ -5,7 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/utils/secure_storage.dart';
 
 class GeminiService {
-  static const String _apiKey = 'AIzaSyBPqumlytFcCalDClhQhJ5gAOjI3xkBWu8';
+  static const String _apiKey = 'key???';
   final SecureStorage _secureStorage = SecureStorage();
 
   String _buildInterviewTypeInstruction(String interviewType, String position) {
